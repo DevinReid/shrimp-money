@@ -1,6 +1,6 @@
 # GitHub Setup Walkthrough
 
-This guide will walk you through connecting your local repository to GitHub.
+This guide will walk you through connecting your local repository to GitHub with the staging → main workflow.
 
 ## Step 1: Create a GitHub Repository
 
@@ -19,23 +19,31 @@ This guide will walk you through connecting your local repository to GitHub.
 
 After creating the repository on GitHub, you'll see a page with setup instructions. Here are the commands you'll run:
 
-### Option A: If you haven't made any commits yet (current situation)
+### Initial Setup (First Push)
 
 ```bash
+# You should already be on the 'staging' branch (our default development branch)
+git status
+
 # Add all files to staging
 git add .
 
 # Make your first commit
-git commit -m "Initial commit"
+git commit -m "chore(ci): initial commit with staging workflow setup"
 
 # Add the GitHub repository as remote (replace YOUR_USERNAME with your GitHub username)
 git remote add origin https://github.com/YOUR_USERNAME/plaidConnect.git
 
-# Rename branch to main (if not already on main)
-git branch -M main
-
-# Push your code to GitHub
+# First, push main branch (if it exists locally, otherwise create it from staging)
+git checkout -b main
 git push -u origin main
+
+# Now push staging branch (this is where you'll do all development)
+git checkout staging
+git push -u origin staging
+
+# Set staging as your default branch for future work
+git checkout staging
 ```
 
 ### Option B: If you want to use SSH instead of HTTPS
@@ -68,25 +76,60 @@ git remote -v
 # This should show your GitHub repository URL
 ```
 
-## Step 4: Future Workflow
+## Step 3: Set Up Branch Protection
 
-Once set up, your typical workflow will be:
+**⚠️ CRITICAL**: After your first push, set up branch protection for `main`:
+
+1. Go to your repository → **Settings** → **Branches**
+2. Add a branch protection rule for `main`
+3. Enable "Require a pull request before merging"
+4. Enable "Do not allow bypassing the above settings"
+5. See `BRANCH_PROTECTION_SETUP.md` for detailed instructions
+
+## Step 4: Development Workflow (Staging → Main)
+
+This repository uses a **staging → main** workflow where:
+- ✅ **`staging`** branch: Where all development happens (you push here)
+- 🔒 **`main`** branch: Protected, only updated via PR merge
+- 🤖 **Auto-PR**: Every push to staging creates/updates a draft PR
+
+### Your Daily Workflow:
 
 ```bash
-# 1. Make changes to your files
+# 1. Make sure you're on staging branch
+git checkout staging
 
-# 2. Stage your changes
+# 2. Make your changes to files
+
+# 3. Stage your changes
 git add .
 
 # Or stage specific files
 git add filename.js
 
-# 3. Commit your changes
-git commit -m "Description of your changes"
+# 4. Commit with conventional commit format
+git commit -m "feat(plaid): add account linking feature"
 
-# 4. Push to GitHub
-git push
+# 5. Push to staging (this auto-creates/updates the draft PR)
+git push origin staging
 ```
+
+### When Ready to Release:
+
+1. The draft PR from `staging → main` is automatically maintained
+2. Review the PR (all commits are automatically categorized)
+3. When ready, merge the PR into `main`
+4. GitHub Actions will automatically create a release
+
+### Using Cursor's @push Command:
+
+You can also use the `@push` command in Cursor, which will:
+- Run lint/build checks
+- Analyze all changes
+- Create a conventional commit message
+- Push to staging automatically
+
+Just type: `@push` in your Cursor chat when you're ready to commit and push.
 
 ## Troubleshooting
 
@@ -109,15 +152,50 @@ git remote add origin https://github.com/YOUR_USERNAME/plaidConnect.git
 git remote set-url origin https://github.com/YOUR_USERNAME/plaidConnect.git
 ```
 
+## Workflow Summary
+
+```
+┌─────────────┐
+│   staging   │ ← You develop here (git checkout staging)
+│             │   Push here: git push origin staging
+└──────┬──────┘
+       │
+       │ (auto-creates/updates draft PR on each push)
+       ↓
+┌─────────────┐
+│ Draft PR    │ ← Auto-maintained by GitHub Actions
+│ staging→main│   Review commits categorized by type
+└──────┬──────┘
+       │
+       │ (you merge when ready)
+       ↓
+┌─────────────┐
+│    main     │ ← Protected branch
+│             │   Only via PR merge
+│             │   Auto-creates release on merge
+└─────────────┘
+```
+
 ## Next Steps
 
 After successfully pushing to GitHub:
-- Your code is now backed up and accessible online
-- You can collaborate with others
-- You can use GitHub's features like Issues, Pull Requests, and Actions
-- You can clone the repository on other machines with: `git clone https://github.com/YOUR_USERNAME/plaidConnect.git`
+1. ✅ Set up branch protection (see `BRANCH_PROTECTION_SETUP.md`)
+2. ✅ Your code is now backed up and accessible online
+3. ✅ Every push to `staging` creates/updates a draft PR
+4. ✅ You can collaborate with others
+5. ✅ Automatic releases on merge to `main`
+
+## Important Reminders
+
+- ⚠️ **Never push directly to `main`** - always use staging → main PR
+- ✅ **Always work on `staging` branch** - `git checkout staging`
+- 🤖 **Auto-PR is automatic** - just push to staging
+- 📝 **Use conventional commits** - helps with auto-categorization
 
 ---
 
-**Need help?** Feel free to ask or check the [GitHub Documentation](https://docs.github.com)
+**Need help?** 
+- See `BRANCH_PROTECTION_SETUP.md` for branch protection setup
+- See `.cursorrules` for commit message format
+- Check the [GitHub Documentation](https://docs.github.com)
 

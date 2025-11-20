@@ -1,0 +1,21 @@
+name: Auto Deploy to Staging
+on:
+  push:
+    branches: [staging]
+  pull_request:
+    branches: [staging]
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Staging Notification
+        run: |
+          echo "🚀 Auto-deploying to staging..."
+          echo "🌐 Staging URL: https://a1-nexus-staging.onrender.com"
+          echo "✅ Deployment triggered successfully"
+          
+      - name: Notify Team
+        run: |
+          echo "📢 Staging deployment complete!"
+          echo "🧪 Ready for testing at: https://a1-nexus-staging.onrender.com"

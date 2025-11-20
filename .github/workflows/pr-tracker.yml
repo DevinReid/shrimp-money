@@ -1,0 +1,131 @@
+name: Maintain Staging → Main PR
+
+# Automatically creates and updates a draft PR from staging to main
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Fetch main branch
+        run: git fetch origin main:main
+          
+      - name: Generate PR Body
+        id: pr_body
+        shell: bash
+        run: |
+          # Get all commits between main and staging
+          COMMITS=$(git log main..HEAD --pretty=format:"- %s (%h)" --reverse)
+          COUNT=$(git rev-list --count main..HEAD)
+          
+          # Categorize commits
+          FEATURES=$(echo "$COMMITS" | grep "^- feat" || true)
+          FIXES=$(echo "$COMMITS" | grep "^- fix" || true)
+          CHORES=$(echo "$COMMITS" | grep "^- chore" || true)
+          DOCS=$(echo "$COMMITS" | grep "^- docs" || true)
+          SECURITY=$(echo "$COMMITS" | grep "^- security" || true)
+          PERF=$(echo "$COMMITS" | grep "^- perf" || true)
+          REFACTOR=$(echo "$COMMITS" | grep "^- refactor" || true)
+          OTHER=$(echo "$COMMITS" | grep -Ev "^- (feat|fix|chore|docs|security|perf|refactor)" || true)
+          
+          # Build PR body using a heredoc
+          cat > pr-body.txt << 'EOF'
+          # 🚀 Staging → Main Release
+          
+          This PR is automatically maintained and includes all changes currently in staging.
+          
+          ## 📊 Summary
+          EOF
+          
+          echo "- **Total Commits**: $COUNT" >> pr-body.txt
+          echo "- **Last Updated**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> pr-body.txt
+          echo "" >> pr-body.txt
+          
+          if [ -n "$FEATURES" ]; then
+            echo "## 🎉 New Features" >> pr-body.txt
+            echo "$FEATURES" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$FIXES" ]; then
+            echo "## 🐛 Bug Fixes" >> pr-body.txt
+            echo "$FIXES" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$SECURITY" ]; then
+            echo "## 🔒 Security" >> pr-body.txt
+            echo "$SECURITY" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$PERF" ]; then
+            echo "## ⚡ Performance" >> pr-body.txt
+            echo "$PERF" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$DOCS" ]; then
+            echo "## 📝 Documentation" >> pr-body.txt
+            echo "$DOCS" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$REFACTOR" ]; then
+            echo "## ♻️ Refactoring" >> pr-body.txt
+            echo "$REFACTOR" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$CHORES" ]; then
+            echo "## 🔧 Maintenance" >> pr-body.txt
+            echo "$CHORES" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$OTHER" ]; then
+            echo "## 📦 Other Changes" >> pr-body.txt
+            echo "$OTHER" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          echo "---" >> pr-body.txt
+          echo "*This PR is automatically updated on every push to staging*" >> pr-body.txt
+          
+      - name: Create or Update Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # Check if PR already exists
+          PR_NUMBER=$(gh pr list --base main --head staging --json number --jq '.[0].number' || echo "")
+          
+          PR_BODY=$(cat pr-body.txt)
+          
+          if [ -z "$PR_NUMBER" ]; then
+            # Create new PR
+            echo "Creating new PR..."
+            gh pr create \
+              --base main \
+              --head staging \
+              --title "🚀 Release: Staging → Main" \
+              --body "$PR_BODY" \
+              --draft
+          else
+            # Update existing PR
+            echo "Updating existing PR #$PR_NUMBER..."
+            gh pr edit "$PR_NUMBER" \
+              --body "$PR_BODY"
+          fi
+

@@ -1,0 +1,222 @@
+name: Maintain Staging → Main PR
+
+# Automatically creates and updates a draft PR from staging to main
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Fetch main branch
+        run: git fetch origin main:main
+          
+      - name: Generate PR Body
+        id: pr_body
+        shell: bash
+        run: |
+          # Get all commits between main and staging
+          COMMITS=$(git log main..HEAD --pretty=format:"- %s (%h)" --reverse)
+          COUNT=$(git rev-list --count main..HEAD)
+          
+          # Categorize commits
+          FEATURES=$(echo "$COMMITS" | grep "^- feat" || true)
+          FIXES=$(echo "$COMMITS" | grep "^- fix" || true)
+          CHORES=$(echo "$COMMITS" | grep "^- chore" || true)
+          DOCS=$(echo "$COMMITS" | grep "^- docs" || true)
+          SECURITY=$(echo "$COMMITS" | grep "^- security" || true)
+          PERF=$(echo "$COMMITS" | grep "^- perf" || true)
+          REFACTOR=$(echo "$COMMITS" | grep "^- refactor" || true)
+          OTHER=$(echo "$COMMITS" | grep -Ev "^- (feat|fix|chore|docs|security|perf|refactor)" || true)
+          
+          # Build PR body using a heredoc
+          cat > pr-body.txt << 'EOF'
+          # 🚀 Staging → Main Release
+          
+          This PR is automatically maintained and includes all changes currently in staging.
+          
+          ## 📊 Summary
+          EOF
+          
+          echo "- **Total Commits**: $COUNT" >> pr-body.txt
+          echo "- **Last Updated**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> pr-body.txt
+          echo "" >> pr-body.txt
+          
+          if [ -n "$FEATURES" ]; then
+            echo "## 🎉 New Features" >> pr-body.txt
+            echo "$FEATURES" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$FIXES" ]; then
+            echo "## 🐛 Bug Fixes" >> pr-body.txt
+            echo "$FIXES" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$SECURITY" ]; then
+            echo "## 🔒 Security" >> pr-body.txt
+            echo "$SECURITY" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$PERF" ]; then
+            echo "## ⚡ Performance" >> pr-body.txt
+            echo "$PERF" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$DOCS" ]; then
+            echo "## 📝 Documentation" >> pr-body.txt
+            echo "$DOCS" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$REFACTOR" ]; then
+            echo "## ♻️ Refactoring" >> pr-body.txt
+            echo "$REFACTOR" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$CHORES" ]; then
+            echo "## 🔧 Maintenance" >> pr-body.txt
+            echo "$CHORES" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          if [ -n "$OTHER" ]; then
+            echo "## 📦 Other Changes" >> pr-body.txt
+            echo "$OTHER" >> pr-body.txt
+            echo "" >> pr-body.txt
+          fi
+          
+          echo "---" >> pr-body.txt
+          echo "*This PR is automatically updated on every push to staging*" >> pr-body.txt
+          
+      - name: Create or Update Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # Check if PR already exists
+          PR_NUMBER=$(gh pr list --base main --head staging --json number --jq '.[0].number' || echo "")
+          
+          PR_BODY=$(cat pr-body.txt)
+          
+          if [ -z "$PR_NUMBER" ]; then
+            # Create new PR
+            echo "Creating new PR..."
+            gh pr create \
+              --base main \
+              --head staging \
+              --title "🚀 Release: Staging → Main" \
+              --body "$PR_BODY" \
+              --draft
+          else
+            # Update existing PR
+            echo "Updating existing PR #$PR_NUMBER..."
+            gh pr edit "$PR_NUMBER" \
+              --body "$PR_BODY"
+          fi
+          
+      - name: Notify via n8n Webhook
+        env:
+          N8N_WEBHOOK_URL: ${{ secrets.N8N_STAGING_NOTIFICATION_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          # Skip if webhook URL not configured
+          if [ -z "$N8N_WEBHOOK_URL" ]; then
+            echo "ℹ️ N8N webhook URL not configured. Skipping notification."
+            echo "   Set N8N_STAGING_NOTIFICATION_WEBHOOK_URL secret to enable notifications."
+            exit 0
+          fi
+          
+          # Get commit information
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_SHA_FULL=$(git rev-parse HEAD)
+          COMMIT_AUTHOR=$(git log -1 --pretty=format:'%an')
+          COMMIT_AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae')
+          COMMIT_MESSAGE=$(git log -1 --pretty=format:'%B')
+          COMMIT_DATE=$(git log -1 --pretty=format:'%ad' --date=iso8601)
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+          PR_URL="${{ github.server_url }}/${{ github.repository }}/pull/$(gh pr list --base main --head staging --json number --jq '.[0].number' 2>/dev/null || echo '')"
+          
+          # Get commit count and stats
+          COMMIT_COUNT=$(git rev-list --count main..HEAD)
+          FILES_CHANGED=$(git diff --name-only main..HEAD | wc -l | tr -d ' ')
+          
+          # Build webhook payload using jq to properly escape all values
+          PAYLOAD=$(jq -n \
+            --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg event "staging_commit" \
+            --arg repository "${{ github.repository }}" \
+            --arg branch "staging" \
+            --arg sha "$COMMIT_SHA" \
+            --arg shaFull "$COMMIT_SHA_FULL" \
+            --arg message "$COMMIT_MESSAGE" \
+            --arg authorName "$COMMIT_AUTHOR" \
+            --arg authorEmail "$COMMIT_AUTHOR_EMAIL" \
+            --arg date "$COMMIT_DATE" \
+            --arg commitUrl "$COMMIT_URL" \
+            --arg repoUrl "$REPO_URL" \
+            --arg prUrl "$PR_URL" \
+            --argjson totalCommits "$COMMIT_COUNT" \
+            --argjson filesChanged "$FILES_CHANGED" \
+            --arg environment "${{ github.ref_name }}" \
+            '{
+              timestamp: $timestamp,
+              event: $event,
+              repository: $repository,
+              branch: $branch,
+              commit: {
+                sha: $sha,
+                shaFull: $shaFull,
+                message: $message,
+                author: {
+                  name: $authorName,
+                  email: $authorEmail
+                },
+                date: $date,
+                url: $commitUrl
+              },
+              stats: {
+                totalCommits: $totalCommits,
+                filesChanged: $filesChanged
+              },
+              links: {
+                commit: $commitUrl,
+                repository: $repoUrl,
+                pullRequest: $prUrl
+              },
+              environment: $environment
+            }')
+          
+          # Send webhook to n8n
+          echo "📡 Sending notification to n8n webhook..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$N8N_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Notification sent successfully! (HTTP $HTTP_CODE)"
+            echo "Response: $BODY"
+          else
+            echo "⚠️ Webhook returned HTTP $HTTP_CODE"
+            echo "Response: $BODY"
+            # Don't fail the workflow if webhook fails
+            exit 0
+          fi

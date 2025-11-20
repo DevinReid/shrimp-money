@@ -1,0 +1,70 @@
+# A1 Nexus Development Rules
+
+## Commit Message Format
+Always use conventional commits to enable automated PR tracking:
+
+### Format
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+### Types
+- `feat` - New features
+- `fix` - Bug fixes
+- `chore` - Maintenance tasks (deps, config, etc.)
+- `docs` - Documentation only changes
+- `refactor` - Code refactoring (no functionality change)
+- `security` - Security improvements
+- `perf` - Performance improvements
+- `test` - Adding or updating tests
+
+### Common Scopes
+- `hr-assistant`, `hr-helper` - HR features
+- `delivery-tracker` - Delivery tracking
+- `estimating` - Estimating features
+- `labor-board` - Labor board
+- `prefab`, `warehouse` - Other modules
+- `kojo` - Kojo integration
+- `acumatica` - Acumatica integration
+- `auth` - Authentication
+- `security` - Security layer
+- `api` - API endpoints
+- `db` - Database changes
+- `ci` - CI/CD and workflows
+
+### Examples
+```
+feat(hr-assistant): add employee search with filters
+fix(kojo): resolve delivery sync timeout issue
+chore(deps): update azure sdk to v4.2.0
+security(auth): implement rate limiting on login
+docs(api): update authentication documentation
+refactor(delivery-tracker): simplify status update logic
+```
+
+## PR Description Template
+When asked to generate a PR description, include:
+
+1. **Summary**: Brief overview of changes
+2. **Changes by Category**: Group commits by type
+3. **Testing**: Note what was tested in staging
+4. **Breaking Changes**: Highlight any breaking changes
+5. **Affected Systems**: List integrations affected (Kojo, Acumatica, etc.)
+
+## Development Workflow
+- All feature work → `staging` branch
+- Test thoroughly in staging environment
+- Batch merge to `main` when ready (GitHub Actions will track changes)
+- CI automatically maintains draft PR from staging → main
+
+## Code Quality
+- Follow existing patterns in the codebase
+- Add TypeScript types for all new code
+- Handle errors gracefully with proper logging
+- Use the security layers for sensitive operations
+- Document complex business logic
+

@@ -1,0 +1,70 @@
+---
+alwaysApply: false
+---
+
+# Push Changes to Staging
+
+When invoked with @push, perform the following steps to validate and push changes:
+
+## Steps:
+
+1. **Automatically Kill Local Servers**: Automatically stop any processes running on port 3000 to prevent Prisma file locking issues
+   - **Detection**: First check if port 3000 is in use, then kill the process
+   - **Windows (Git Bash/CMD)**: Run `netstat -ano | findstr :3000` to find PID, then `taskkill /F /PID <pid>` for each PID found
+     - Or use one-liner: `for /f "tokens=5" %a in ('netstat -ano ^| findstr :3000') do @taskkill /F /PID %a 2>nul`
+   - **Windows (PowerShell)**: Run `Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }`
+   - **Unix/Mac**: Run `lsof -ti:3000 | xargs kill -9 2>/dev/null || true`
+   - **Fallback**: If automated kill fails, show user the PIDs and ask them to manually stop
+   - This prevents Prisma file locking issues and build errors with query_engine-windows.dll.node
+   - Wait 2-3 seconds after killing processes before proceeding to step 2
+
+2. **Check Git Status**: Run `git status` to see what files have changed
+
+3. **Run Lint Check**: Execute `npm run lint` from the project root
+   - Note: Pre-existing warnings are acceptable
+   - Only fix NEW lint errors introduced by current changes
+   - The project allows up to 250 warnings (see package.json)
+
+4. **Run Build Check**: Execute `npm run build` from the project root
+   - This includes TypeScript type checking
+   - If you encounter `.next` directory issues on Windows, run `cd apps/main-app && rm -rf .next && cd ../..` then retry build
+   - If Prisma file locking errors persist, clear Prisma cache: `rm -rf node_modules/.prisma`
+   - Build MUST pass with no errors before proceeding
+   - If build continues to fail due to file locks, user may need to close Cursor/VS Code entirely
+
+5. **Stage Changes**: Run `git add -A` to stage all changes
+
+6. **Analyze ALL Changes**: Before creating the commit message, analyze ALL staged changes:
+   - Run `git diff --cached --stat` to see all files that will be committed
+   - Run `git diff --cached` to see the actual changes in all files
+   - Review changes from BOTH the current chat session AND any other uncommitted changes
+   - Look for changes in files that weren't mentioned in the current conversation
+   - This ensures the commit message captures everything being committed, not just what was discussed
+
+7. **Commit with Conventional Commit Message**: 
+   - Follow the conventional commit format from the repo rules
+   - Use appropriate type: `feat`, `fix`, `chore`, `refactor`, `security`, `docs`, etc.
+   - Include scope if applicable: `hr-assistant`, `delivery-tracker`, `auth`, `db`, etc.
+   - **IMPORTANT**: Include ALL changes found in step 6, not just changes from the current chat
+   - Group related changes together
+   - Provide clear description and bullet points for ALL changes
+   
+   Example:
+   ```
+   feat(hr-assistant): add employee directory with active employee import
+   
+   - Add new directory page with employee listing
+   - Implement active employee repository
+   - Create import script for employee data
+   - Fix authentication token refresh (from previous session)
+   - Update API error handling in delivery tracker
+   ```
+
+8. **Push to Branch**: Run `git push origin staging` (or other branch if specified by user)
+
+## Important Notes:
+- Default branch is `staging` unless user specifies otherwise
+- Do NOT fix pre-existing lint warnings unless specifically requested
+- Build must pass completely before committing (unless explicitly skipped by user due to environmental issues)
+- Always use conventional commit format per repo rules
+- Servers on port 3000 are automatically killed in step 1, but user may need to manually stop other ports if issues persist

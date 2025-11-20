@@ -1,0 +1,65 @@
+# Plaid Connect Development Rules
+
+## Commit Message Format
+Always use conventional commits to enable automated PR tracking:
+
+### Format
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+### Types
+- `feat` - New features
+- `fix` - Bug fixes
+- `chore` - Maintenance tasks (deps, config, etc.)
+- `docs` - Documentation only changes
+- `refactor` - Code refactoring (no functionality change)
+- `security` - Security improvements
+- `perf` - Performance improvements
+- `test` - Adding or updating tests
+
+### Common Scopes
+- `plaid` - Plaid integration features
+- `auth` - Authentication
+- `api` - API endpoints
+- `db` - Database changes
+- `ui` - User interface components
+- `ci` - CI/CD and workflows
+- `config` - Configuration changes
+
+### Examples
+```
+feat(plaid): add account linking flow
+fix(auth): resolve token refresh issue
+chore(deps): update plaid sdk to latest version
+security(auth): implement rate limiting on login
+docs(api): update authentication documentation
+refactor(ui): simplify account selection component
+```
+
+## PR Description Template
+When asked to generate a PR description, include:
+
+1. **Summary**: Brief overview of changes
+2. **Changes by Category**: Group commits by type
+3. **Testing**: Note what was tested in staging
+4. **Breaking Changes**: Highlight any breaking changes
+5. **Affected Systems**: List integrations affected (Plaid, auth, etc.)
+
+## Development Workflow
+- All feature work → `staging` branch
+- Test thoroughly in staging environment
+- Batch merge to `main` when ready (GitHub Actions will track changes)
+- CI automatically maintains draft PR from staging → main
+
+## Code Quality
+- Follow existing patterns in the codebase
+- Add TypeScript types for all new code
+- Handle errors gracefully with proper logging
+- Use security layers for sensitive operations
+- Document complex business logic
+

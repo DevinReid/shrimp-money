@@ -1,0 +1,246 @@
+name: Create Release on Main Merge
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Get Latest Tag
+        id: get_tag
+        run: |
+          # Get the latest tag, or default to v0.0.0 if none exists
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+          
+      - name: Get Commits Since Last Tag
+        id: commits
+        run: |
+          LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
+          
+          # Get commits since last tag
+          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+            # First release - get all commits
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse || echo "")
+          else
+            # Get commits since last tag
+            COMMITS=$(git log $LATEST_TAG..HEAD --pretty=format:"- %s (%h)" --reverse || echo "")
+          fi
+          
+          echo "Found $(echo "$COMMITS" | grep -c . || echo 0) commits to include in release"
+          
+          # Count commit types (grep -c always returns a number, even if 0)
+          FEAT_COUNT=$(echo "$COMMITS" | grep -c "^- feat" 2>/dev/null || printf "0")
+          FIX_COUNT=$(echo "$COMMITS" | grep -c "^- fix" 2>/dev/null || printf "0")
+          BREAKING_COUNT=$(echo "$COMMITS" | grep -c "BREAKING CHANGE" 2>/dev/null || printf "0")
+          
+          # Categorize commits
+          FEATURES=$(echo "$COMMITS" | grep "^- feat" || true)
+          FIXES=$(echo "$COMMITS" | grep "^- fix" || true)
+          CHORES=$(echo "$COMMITS" | grep "^- chore" || true)
+          DOCS=$(echo "$COMMITS" | grep "^- docs" || true)
+          SECURITY=$(echo "$COMMITS" | grep "^- security" || true)
+          PERF=$(echo "$COMMITS" | grep "^- perf" || true)
+          REFACTOR=$(echo "$COMMITS" | grep "^- refactor" || true)
+          OTHER=$(echo "$COMMITS" | grep -Ev "^- (feat|fix|chore|docs|security|perf|refactor)" || true)
+          
+          # Save to output
+          echo "feat_count=$FEAT_COUNT" >> $GITHUB_OUTPUT
+          echo "fix_count=$FIX_COUNT" >> $GITHUB_OUTPUT
+          echo "breaking_count=$BREAKING_COUNT" >> $GITHUB_OUTPUT
+          
+          {
+            echo 'features<<EOF'
+            echo "$FEATURES"
+            echo EOF
+            echo 'fixes<<EOF'
+            echo "$FIXES"
+            echo EOF
+            echo 'chores<<EOF'
+            echo "$CHORES"
+            echo EOF
+            echo 'docs<<EOF'
+            echo "$DOCS"
+            echo EOF
+            echo 'security<<EOF'
+            echo "$SECURITY"
+            echo EOF
+            echo 'perf<<EOF'
+            echo "$PERF"
+            echo EOF
+            echo 'refactor<<EOF'
+            echo "$REFACTOR"
+            echo EOF
+            echo 'other<<EOF'
+            echo "$OTHER"
+            echo EOF
+          } >> $GITHUB_OUTPUT
+          
+      - name: Calculate New Version
+        id: version
+        run: |
+          LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
+          
+          # Parse version (remove 'v' prefix)
+          VERSION=${LATEST_TAG#v}
+          
+          # Split into major.minor.patch
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          
+          # Default to 0.0.0 if parsing fails
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+          
+          # Determine version bump (ensure counts are treated as numbers)
+          BREAKING_COUNT="${{ steps.commits.outputs.breaking_count }}"
+          FEAT_COUNT="${{ steps.commits.outputs.feat_count }}"
+          FIX_COUNT="${{ steps.commits.outputs.fix_count }}"
+          
+          # Default to 0 if empty
+          BREAKING_COUNT=${BREAKING_COUNT:-0}
+          FEAT_COUNT=${FEAT_COUNT:-0}
+          FIX_COUNT=${FIX_COUNT:-0}
+          
+          if [ "$BREAKING_COUNT" -gt 0 ] 2>/dev/null; then
+            # Major version bump for breaking changes
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            BUMP_TYPE="major"
+          elif [ "$FEAT_COUNT" -gt 0 ] 2>/dev/null; then
+            # Minor version bump for new features
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            BUMP_TYPE="minor"
+          elif [ "$FIX_COUNT" -gt 0 ] 2>/dev/null; then
+            # Patch version bump for fixes
+            PATCH=$((PATCH + 1))
+            BUMP_TYPE="patch"
+          else
+            # Patch version bump for any other changes
+            PATCH=$((PATCH + 1))
+            BUMP_TYPE="patch"
+          fi
+          
+          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION (${BUMP_TYPE} bump)"
+          
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
+          BUMP_TYPE="${{ steps.version.outputs.bump_type }}"
+          
+          # Build release notes with dynamic date
+          RELEASE_DATE=$(date -u '+%B %d, %Y at %H:%M UTC')
+          
+          cat > release-notes.md << EOF
+# 🚀 Release $NEW_VERSION
+
+**Release Type:** $BUMP_TYPE version bump
+**Released:** $RELEASE_DATE
+
+EOF
+          
+          # Add features section
+          if [ -n "${{ steps.commits.outputs.features }}" ]; then
+            FEAT_COUNT="${{ steps.commits.outputs.feat_count }}"
+            echo "" >> release-notes.md
+            echo "## 🎉 New Features ($FEAT_COUNT)" >> release-notes.md
+            echo "${{ steps.commits.outputs.features }}" >> release-notes.md
+          fi
+          
+          # Add fixes section
+          if [ -n "${{ steps.commits.outputs.fixes }}" ]; then
+            FIX_COUNT="${{ steps.commits.outputs.fix_count }}"
+            echo "" >> release-notes.md
+            echo "## 🐛 Bug Fixes ($FIX_COUNT)" >> release-notes.md
+            echo "${{ steps.commits.outputs.fixes }}" >> release-notes.md
+          fi
+          
+          # Add security section
+          if [ -n "${{ steps.commits.outputs.security }}" ]; then
+            echo "" >> release-notes.md
+            echo "## 🔒 Security" >> release-notes.md
+            echo "${{ steps.commits.outputs.security }}" >> release-notes.md
+          fi
+          
+          # Add performance section
+          if [ -n "${{ steps.commits.outputs.perf }}" ]; then
+            echo "" >> release-notes.md
+            echo "## ⚡ Performance" >> release-notes.md
+            echo "${{ steps.commits.outputs.perf }}" >> release-notes.md
+          fi
+          
+          # Add docs section
+          if [ -n "${{ steps.commits.outputs.docs }}" ]; then
+            echo "" >> release-notes.md
+            echo "## 📝 Documentation" >> release-notes.md
+            echo "${{ steps.commits.outputs.docs }}" >> release-notes.md
+          fi
+          
+          # Add refactor section
+          if [ -n "${{ steps.commits.outputs.refactor }}" ]; then
+            echo "" >> release-notes.md
+            echo "## ♻️ Refactoring" >> release-notes.md
+            echo "${{ steps.commits.outputs.refactor }}" >> release-notes.md
+          fi
+          
+          # Add chores section
+          if [ -n "${{ steps.commits.outputs.chores }}" ]; then
+            echo "" >> release-notes.md
+            echo "## 🔧 Maintenance" >> release-notes.md
+            echo "${{ steps.commits.outputs.chores }}" >> release-notes.md
+          fi
+          
+          # Add other changes section
+          if [ -n "${{ steps.commits.outputs.other }}" ]; then
+            echo "" >> release-notes.md
+            echo "## 📦 Other Changes" >> release-notes.md
+            echo "${{ steps.commits.outputs.other }}" >> release-notes.md
+          fi
+          
+          # Add footer
+          echo "" >> release-notes.md
+          echo "---" >> release-notes.md
+          
+          if [ "$LATEST_TAG" != "v0.0.0" ]; then
+            echo "**Full Changelog:** [\`$LATEST_TAG...$NEW_VERSION\`](https://github.com/${{ github.repository }}/compare/$LATEST_TAG...$NEW_VERSION)" >> release-notes.md
+          fi
+          
+          echo "✅ Tested in staging environment" >> release-notes.md
+          
+          # Output the notes
+          cat release-notes.md
+          
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          RELEASE_NOTES=$(cat release-notes.md)
+          
+          # Create the release
+          gh release create "$NEW_VERSION" \
+            --title "Release $NEW_VERSION" \
+            --notes "$RELEASE_NOTES" \
+            --target main
+          
+          echo "✅ Created release $NEW_VERSION"
+

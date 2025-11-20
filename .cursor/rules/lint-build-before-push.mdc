@@ -1,0 +1,62 @@
+---
+alwaysApply: false
+---
+# Pre-Push Quality Checks
+
+## Always Run Before Pushing to Any Branch
+
+When pushing code changes via Cursor (or any other method), **ALWAYS** run these checks in order to ensure smoother deployments and catch issues before CI:
+
+### 1. TypeScript Type Check (if applicable)
+```bash
+npx tsc --noEmit
+```
+- **Must pass with 0 errors** if TypeScript is configured
+- Catches type errors that will break the build
+- Skip if TypeScript is not used in the project
+
+### 2. ESLint Lint Check (if applicable)
+```bash
+npm run lint
+```
+- **Must pass** (allows warnings based on project configuration)
+- Ensures code style consistency
+- Skip if linting is not configured
+
+### 3. Build Check (if applicable)
+```bash
+npm run build
+```
+- **Must complete successfully** if build script exists
+- Verifies the app compiles and all pages generate
+- This is what CI will run, so catch issues locally first
+- Skip if build script is not configured
+
+## Why These Checks Matter
+
+- ✅ **Prevents broken CI builds** - Catches errors before they hit GitHub Actions
+- ✅ **Faster feedback** - Find issues in seconds locally vs minutes in CI
+- ✅ **Smoother deployments** - Staging and production deploys won't fail
+- ✅ **Better code quality** - Type safety prevents runtime errors
+
+## What to Do If Checks Fail
+
+### TypeScript Errors
+- Fix immediately - these are real type safety issues
+- Don't use `any` as a quick fix - use `unknown` or proper types
+
+### Lint Warnings
+- Fix critical errors
+- Consider fixing warnings while you're in the file
+- Use `eslint-disable-next-line` only for intentional patterns (with comment explaining why)
+
+### Build Errors
+- These are critical - fix before pushing
+- Usually caused by TypeScript errors or missing imports
+- Run `npm run build` again after fixing to verify
+
+## Remember
+
+**"If it doesn't build locally, it won't build in CI."**
+
+Taking time to run these checks now saves debugging CI failures later.

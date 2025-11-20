@@ -1,0 +1,80 @@
+---
+alwaysApply: false
+---
+# Pre-Push Quality Checks
+
+## Always Run Before Pushing to Any Branch
+
+When pushing code changes via Cursor (or any other method), **ALWAYS** run these checks in order to ensure smoother deployments and catch issues before CI:
+
+### 1. TypeScript Type Check (Critical)
+```bash
+cd apps/main-app
+npx tsc --noEmit
+```
+- **Must pass with 0 errors**
+- Catches type errors that will break the build
+- Takes ~5-10 seconds
+
+### 2. ESLint Lint Check
+```bash
+cd apps/main-app
+npm run lint
+```
+- **Must pass** (allows up to 250 warnings)
+- Ensures code style consistency
+- Use `npm run lint:strict` to see ideal state (0 warnings)
+
+### 3. Build Check (Critical)
+```bash
+cd apps/main-app
+npm run build
+```
+- **Must complete successfully**
+- Verifies the app compiles and all pages generate
+- Takes ~10-15 seconds
+- This is what CI will run, so catch issues locally first
+
+## Quick Pre-Push Command
+
+Run all three checks at once:
+```bash
+cd apps/main-app && npx tsc --noEmit && npm run lint && npm run build
+```
+
+## Why These Checks Matter
+
+- ✅ **Prevents broken CI builds** - Catches errors before they hit GitHub Actions
+- ✅ **Faster feedback** - Find issues in seconds locally vs minutes in CI
+- ✅ **Smoother deployments** - Staging and production deploys won't fail
+- ✅ **Better code quality** - Type safety prevents runtime errors
+- ✅ **Team efficiency** - Don't block others with broken builds
+
+## What to Do If Checks Fail
+
+### TypeScript Errors
+- Fix immediately - these are real type safety issues
+- Don't use `any` as a quick fix - use `unknown` or proper types
+- See existing code for patterns (Prisma queries, API responses)
+
+### Lint Warnings
+- If under 250 warnings, you're good to push
+- Consider fixing a few while you're in the file
+- Use `eslint-disable-next-line` only for intentional patterns (with comment explaining why)
+
+### Build Errors
+- These are critical - fix before pushing
+- Usually caused by TypeScript errors or missing imports
+- Run `npm run build` again after fixing to verify
+
+## Current Standards
+
+- **TypeScript errors:** 0 (strict)
+- **Lint warnings:** ≤250 (pragmatic)
+- **Build status:** Must pass
+
+## Remember
+
+**"If it doesn't build locally, it won't build in CI."**
+
+Taking 30 seconds to run these checks now saves 10 minutes of debugging CI failures later.
