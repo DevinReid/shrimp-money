@@ -1,0 +1,346 @@
+.auth-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.auth-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  padding: 40px;
+  width: 100%;
+  max-width: 450px;
+}
+
+.auth-card h2 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 28px;
+  text-align: center;
+}
+
+.auth-subtitle {
+  text-align: center;
+  color: #666;
+  margin-bottom: 30px;
+  font-size: 14px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #333;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.3s;
+  box-sizing: border-box;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.form-group input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.form-group small {
+  display: block;
+  margin-top: 5px;
+  color: #999;
+  font-size: 12px;
+}
+
+.auth-button {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  margin-top: 10px;
+}
+
+.auth-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.auth-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-error {
+  background-color: #fee;
+  color: #c33;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #fcc;
+  font-size: 14px;
+}
+
+.auth-footer {
+  margin-top: 20px;
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #667eea;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+  padding: 0;
+}
+
+.link-button:hover {
+  color: #764ba2;
+}
+
+/* MFA Setup Styles */
+.mfa-setup {
+  text-align: center;
+}
+
+.mfa-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.mfa-icon {
+  font-size: 48px;
+  margin-bottom: 10px;
+}
+
+.microsoft-auth-section {
+  margin: 30px 0;
+  padding: 20px;
+  background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+  border-radius: 12px;
+  color: white;
+}
+
+.microsoft-auth-button {
+  width: 100%;
+  padding: 16px 24px;
+  background: white;
+  color: #0078d4;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: transform 0.2s, box-shadow 0.2s;
+  margin-bottom: 12px;
+}
+
+.microsoft-auth-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.microsoft-auth-button svg {
+  width: 24px;
+  height: 24px;
+}
+
+.microsoft-auth-hint {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.mfa-instructions {
+  text-align: left;
+  margin: 30px 0;
+  padding: 20px;
+  background-color: #f0f7ff;
+  border-radius: 8px;
+  border-left: 4px solid #0078d4;
+}
+
+.mfa-instructions h3 {
+  margin: 0 0 15px 0;
+  color: #0078d4;
+  font-size: 18px;
+}
+
+.mfa-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: #333;
+}
+
+.mfa-steps li {
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.mfa-steps li strong {
+  color: #0078d4;
+}
+
+.qr-code-container {
+  margin: 30px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.qr-code-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.qr-code {
+  max-width: 280px;
+  width: 100%;
+  border: 3px solid #0078d4;
+  border-radius: 12px;
+  padding: 15px;
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 120, 212, 0.2);
+}
+
+.qr-code-label {
+  font-weight: 600;
+  color: #0078d4;
+  font-size: 16px;
+}
+
+.mfa-manual-entry {
+  margin: 20px 0;
+  text-align: left;
+}
+
+.mfa-manual-entry summary {
+  cursor: pointer;
+  padding: 12px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  font-weight: 500;
+  color: #666;
+  user-select: none;
+}
+
+.mfa-manual-entry summary:hover {
+  background-color: #eeeeee;
+}
+
+.mfa-secret {
+  margin: 15px 0 0 0;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+}
+
+.mfa-secret p {
+  margin: 0 0 10px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.secret-code {
+  display: block;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #333;
+  word-break: break-all;
+  background: white;
+  padding: 12px;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  margin-bottom: 10px;
+}
+
+.copy-secret-button {
+  width: 100%;
+  padding: 10px;
+  background: #0078d4;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.copy-secret-button:hover {
+  background: #106ebe;
+}
+
+.mfa-verify-form {
+  margin-top: 30px;
+}
+
+.mfa-input {
+  text-align: center;
+  font-size: 24px;
+  letter-spacing: 8px;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+}
+
+.mfa-verify-hint {
+  margin: 20px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.microsoft-auth-button-small {
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.microsoft-auth-button-small:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 120, 212, 0.3);
+}
+
+.microsoft-auth-button-small svg {
+  width: 20px;
+  height: 20px;
+}
+

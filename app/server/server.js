@@ -9,6 +9,10 @@ const fs = require('fs-extra');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+// Import auth routes and middleware
+const authRoutes = require('./routes/auth');
+const { requireMFA } = require('./middleware/auth');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -64,8 +68,8 @@ function saveTransactionData(itemId, transactionData) {
   fs.writeJsonSync(transactionFile, transactionData, { spaces: 2 });
 }
 
-// Create link token
-app.post('/api/create_link_token', async (req, res) => {
+// Protected Plaid routes - require MFA verification
+app.post('/api/create_link_token', requireMFA, async (req, res) => {
   try {
     const request = {
       user: {
@@ -93,7 +97,7 @@ app.post('/api/create_link_token', async (req, res) => {
 });
 
 // Exchange public token for access token
-app.post('/api/exchange_public_token', async (req, res) => {
+app.post('/api/exchange_public_token', requireMFA, async (req, res) => {
   try {
     const { public_token } = req.body;
 
@@ -144,7 +148,7 @@ app.post('/api/exchange_public_token', async (req, res) => {
 });
 
 // Get accounts (balance information)
-app.get('/api/accounts', async (req, res) => {
+app.get('/api/accounts', requireMFA, async (req, res) => {
   try {
     const itemsData = readItems();
 
@@ -176,7 +180,7 @@ app.get('/api/accounts', async (req, res) => {
 });
 
 // Get transactions
-app.get('/api/transactions', async (req, res) => {
+app.get('/api/transactions', requireMFA, async (req, res) => {
   try {
     const itemsData = readItems();
 
@@ -213,7 +217,7 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 // Get all stored items
-app.get('/api/items', (req, res) => {
+app.get('/api/items', requireMFA, (req, res) => {
   try {
     const itemsData = readItems();
     res.json(itemsData);
@@ -223,13 +227,20 @@ app.get('/api/items', (req, res) => {
   }
 });
 
-// Health check
+// Auth routes (public)
+app.use('/api/auth', authRoutes);
+
+// Health check (public)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Protected Plaid routes - require MFA verification
+app.post('/api/create_link_token', requireMFA, async (req, res) => {
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Make sure PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET are set in .env`);
+  console.log(`JWT_SECRET is ${process.env.JWT_SECRET ? 'set' : 'using default (change in production!)'}`);
 });
 

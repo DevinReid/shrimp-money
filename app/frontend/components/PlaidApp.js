@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
 import { useAuth } from './auth/AuthContext';
-import ProtectedRoute from './auth/ProtectedRoute';
-import './App.css';
+import '../app/page.css';
 
-function PlaidApp() {
+export default function PlaidApp() {
   const [linkToken, setLinkToken] = useState(null);
   const [accessToken, setAccessToken] = useState(null);
   const [accounts, setAccounts] = useState(null);
@@ -19,7 +20,7 @@ function PlaidApp() {
 
     const generateToken = async () => {
       try {
-        const response = await fetch('/api/create_link_token', {
+        const response = await fetch('/api/plaid/create_link_token', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -29,10 +30,15 @@ function PlaidApp() {
         if (data.link_token) {
           setLinkToken(data.link_token);
         } else if (data.error) {
-          if (data.error === 'MFA verification required' || data.requiresMFA) {
+          // Handle error object or string
+          const errorMsg = typeof data.error === 'object' 
+            ? data.error.error_message || data.error.error_code || 'Unknown error'
+            : data.error;
+          
+          if (errorMsg === 'MFA verification required' || data.requiresMFA) {
             setError('Please complete MFA verification to continue.');
           } else {
-            setError(data.error || 'Failed to create link token. Check your .env file.');
+            setError(errorMsg || 'Failed to create link token. Check your .env file.');
           }
         } else {
           setError('Failed to create link token. Check your .env file.');
@@ -53,7 +59,7 @@ function PlaidApp() {
 
     try {
       // Exchange public token for access token
-      const exchangeResponse = await fetch('/api/exchange_public_token', {
+      const exchangeResponse = await fetch('/api/plaid/exchange_public_token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -70,7 +76,11 @@ function PlaidApp() {
         await fetchAccounts();
         await fetchTransactions();
       } else {
-        setError('Failed to exchange public token');
+        // Handle error object or string
+        const errorMsg = exchangeData.error && typeof exchangeData.error === 'object'
+          ? exchangeData.error.error_message || exchangeData.error.error_code || 'Unknown error'
+          : exchangeData.error || 'Failed to exchange public token';
+        setError(errorMsg);
       }
     } catch (err) {
       console.error('Error exchanging token:', err);
@@ -78,7 +88,7 @@ function PlaidApp() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   const { open, ready } = usePlaidLink({
     token: linkToken,
@@ -88,7 +98,7 @@ function PlaidApp() {
   const fetchAccounts = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/accounts', {
+      const response = await fetch('/api/plaid/accounts', {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -97,7 +107,11 @@ function PlaidApp() {
       if (data.accounts) {
         setAccounts(data);
       } else if (data.error) {
-        setError(data.error);
+        // Handle error object or string
+        const errorMsg = typeof data.error === 'object' 
+          ? data.error.error_message || data.error.error_code || 'Unknown error'
+          : data.error;
+        setError(errorMsg);
       }
     } catch (err) {
       console.error('Error fetching accounts:', err);
@@ -110,7 +124,7 @@ function PlaidApp() {
   const fetchTransactions = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/transactions', {
+      const response = await fetch('/api/plaid/transactions', {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -119,7 +133,11 @@ function PlaidApp() {
       if (data.transactions) {
         setTransactions(data);
       } else if (data.error) {
-        setError(data.error);
+        // Handle error object or string
+        const errorMsg = typeof data.error === 'object' 
+          ? data.error.error_message || data.error.error_code || 'Unknown error'
+          : data.error;
+        setError(errorMsg);
       }
     } catch (err) {
       console.error('Error fetching transactions:', err);
@@ -145,8 +163,8 @@ function PlaidApp() {
   };
 
   return (
-    <div className="App">
-      <header className="App-header">
+    <div className="app">
+      <header className="app-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
           <div>
             <h1>Bank Account Manager</h1>
@@ -154,7 +172,7 @@ function PlaidApp() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             {user && (
-              <span style={{ color: '#fff', fontSize: '14px' }}>
+              <span style={{ color: '#333', fontSize: '14px' }}>
                 Logged in as: <strong>{user.username}</strong>
               </span>
             )}
@@ -162,10 +180,10 @@ function PlaidApp() {
               onClick={logout} 
               style={{
                 padding: '8px 16px',
-                background: 'rgba(255, 255, 255, 0.2)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
+                background: 'rgba(102, 126, 234, 0.1)',
+                border: '1px solid rgba(102, 126, 234, 0.3)',
                 borderRadius: '6px',
-                color: 'white',
+                color: '#667eea',
                 cursor: 'pointer',
                 fontSize: '14px',
               }}
@@ -176,7 +194,7 @@ function PlaidApp() {
         </div>
       </header>
 
-      <main className="App-main">
+      <main className="app-main">
         {error && (
           <div className="error-message">
             <strong>Error:</strong> {error}
@@ -285,15 +303,4 @@ function PlaidApp() {
     </div>
   );
 }
-
-// Main App component with auth wrapper
-function App() {
-  return (
-    <ProtectedRoute>
-      <PlaidApp />
-    </ProtectedRoute>
-  );
-}
-
-export default App;
 

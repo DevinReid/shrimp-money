@@ -158,6 +158,18 @@ Once you have the data, you can:
 - Set up scheduled data refreshes
 - Add more Plaid products (Identity, Investments, etc.)
 
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](./docs/) directory:
+
+- **[API Documentation](./docs/API.md)** - Complete API endpoint reference
+- **[Development Guide](./docs/DEVELOPMENT.md)** - Development workflow and best practices
+- **[Architecture Overview](./docs/ARCHITECTURE.md)** - System design and structure
+- **[Troubleshooting Guide](./docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[Environment Variables](./docs/ENVIRONMENT.md)** - Configuration reference
+- **[Plaid Integration Guide](./docs/PLAID_INTEGRATION.md)** - Detailed Plaid setup
+- **[Deployment Guide](./docs/DEPLOYMENT.md)** - Production deployment instructions
+
 ## Resources
 
 - [Plaid Quickstart Guide](https://plaid.com/docs/quickstart/)
