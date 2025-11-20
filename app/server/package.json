@@ -1,0 +1,21 @@
+{
+  "name": "plaid-connect-server",
+  "version": "1.0.0",
+  "description": "Plaid Connect Backend Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "plaid": "^21.0.0",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "fs-extra": "^11.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
+

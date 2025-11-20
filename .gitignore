@@ -1,36 +1,35 @@
 # Dependencies
 node_modules/
-venv/
-env/
-.venv/
+app/node_modules/
+app/server/node_modules/
+app/frontend/node_modules/
 
 # Environment variables
 .env
-.env.local
-.env.*.local
+app/.env
+app/server/.env
+app/frontend/.env
+
+# Data files
+app/server/data/
+*.json
+!package.json
+!package-lock.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Build outputs
+# Build files
 dist/
 build/
-*.pyc
-__pycache__/
-
-# Temporary files
-*.tmp
-*.temp
-
