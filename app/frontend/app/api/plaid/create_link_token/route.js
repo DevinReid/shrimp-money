@@ -56,22 +56,35 @@ export async function POST(req) {
       request.oauth_state_id = oauthStateId;
     }
 
+    console.log('🔗 Creating Plaid link token...', { 
+      hasOAuthStateId: !!oauthStateId,
+      redirectUri,
+      isProduction: isProduction 
+    });
+    
     const response = await client.linkTokenCreate(request);
+    console.log('✅ Plaid link token created successfully');
     return NextResponse.json(response.data);
   } catch (error) {
-    console.error('Error creating link token:', error);
+    console.error('❌ Error creating link token:', error);
     
     // Log more details for debugging
     if (error.response?.data) {
-      console.error('Plaid API Error:', error.response.data);
+      console.error('❌ Plaid API Error:', JSON.stringify(error.response.data, null, 2));
     }
     
     // Check if it's a credentials issue
-    if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SANDBOX_SECRET) {
+    const isProduction = process.env.PLAID_ENV === 'production';
+    const hasCredentials = isProduction 
+      ? (process.env.PLAID_CLIENT_ID && process.env.PLAID_PRODUCTION_SECRET)
+      : (process.env.PLAID_CLIENT_ID && process.env.PLAID_SANDBOX_SECRET);
+    
+    if (!hasCredentials) {
+      console.error('❌ Missing Plaid credentials');
       return NextResponse.json({
         error: {
           error_code: 'MISSING_CREDENTIALS',
-          error_message: 'Plaid credentials not configured. Please set PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET in .env or .env.local in the app/frontend directory',
+          error_message: `Plaid credentials not configured. Please set PLAID_CLIENT_ID and ${isProduction ? 'PLAID_PRODUCTION_SECRET' : 'PLAID_SANDBOX_SECRET'} in environment variables`,
         },
       }, { status: 500 });
     }

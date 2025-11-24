@@ -19,14 +19,20 @@ export default function PlaidApp() {
 
   // Generate link token on component mount or when OAuth state changes
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      console.log('🔐 No token available, skipping link token generation');
+      return;
+    }
 
     const oauthStateId = searchParams.get('oauth_state_id');
+    console.log('🔗 Generating link token...', { oauthStateId: oauthStateId || 'none' });
 
     const generateToken = async () => {
       try {
+        setLoading(true);
         const requestBody = oauthStateId ? { oauth_state_id: oauthStateId } : {};
         
+        console.log('📤 Requesting link token from API...');
         const response = await fetch('/api/plaid/create_link_token', {
           method: 'POST',
           headers: {
@@ -35,11 +41,22 @@ export default function PlaidApp() {
           },
           body: JSON.stringify(requestBody),
         });
+        
+        console.log('📥 Link token response status:', response.status);
         const data = await response.json();
+        console.log('📥 Link token response data:', { 
+          hasLinkToken: !!data.link_token, 
+          hasError: !!data.error,
+          error: data.error 
+        });
+        
         if (data.link_token) {
+          console.log('✅ Link token received successfully');
           setLinkToken(data.link_token);
+          setError(null);
           // If we have an OAuth state ID, automatically open Plaid Link
           if (oauthStateId && ready) {
+            console.log('🔄 OAuth flow detected, opening Plaid Link...');
             // Clean up URL first
             router.replace('/');
             // Small delay to ensure state is updated
@@ -51,17 +68,22 @@ export default function PlaidApp() {
             ? data.error.error_message || data.error.error_code || 'Unknown error'
             : data.error;
           
+          console.error('❌ Link token error:', errorMsg);
+          
           if (errorMsg === 'MFA verification required' || data.requiresMFA) {
             setError('Please complete MFA verification to continue.');
           } else {
             setError(errorMsg || 'Failed to create link token. Check your .env file.');
           }
         } else {
+          console.error('❌ No link token and no error in response');
           setError('Failed to create link token. Check your .env file.');
         }
       } catch (err) {
-        console.error('Error generating link token:', err);
+        console.error('❌ Error generating link token:', err);
         setError('Failed to connect to server. Make sure the backend is running.');
+      } finally {
+        setLoading(false);
       }
     };
 
