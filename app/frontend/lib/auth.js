@@ -113,15 +113,22 @@ function findUserById(userId) {
     let mfaEnabled = false;
     let mfaSecret = null;
     
-    // Try to load MFA data from file
-    try {
-      if (fs.existsSync(ADMIN_MFA_FILE)) {
-        const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
-        mfaEnabled = adminMfaData.mfaEnabled || false;
-        mfaSecret = adminMfaData.mfaSecret || null;
+    // First check environment variable (persists across deployments)
+    if (process.env.ADMIN_MFA_SECRET) {
+      mfaSecret = process.env.ADMIN_MFA_SECRET;
+      mfaEnabled = process.env.ADMIN_MFA_ENABLED === 'true';
+    }
+    // Fallback to file (for current session)
+    else {
+      try {
+        if (fs.existsSync(ADMIN_MFA_FILE)) {
+          const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
+          mfaEnabled = adminMfaData.mfaEnabled || false;
+          mfaSecret = adminMfaData.mfaSecret || null;
+        }
+      } catch (error) {
+        console.error('Error reading admin MFA file:', error);
       }
-    } catch (error) {
-      console.error('Error reading admin MFA file:', error);
     }
     
     return {
@@ -249,15 +256,20 @@ function generateMFASecret(username) {
 function saveMFASecret(userId, secret) {
   console.log(`🔐 Saving MFA secret for user: ${userId}`);
   
-  // Handle hardcoded admin user
+  // Handle hardcoded admin user - store in environment variable for persistence
   if (userId === 'admin' && process.env.ADMIN_USERNAME) {
     try {
+      const encryptedSecret = encrypt(secret);
+      // Store in file for current session, but also log it for user to add to env vars
       const adminMfaData = { 
-        mfaSecret: encrypt(secret), 
+        mfaSecret: encryptedSecret, 
         mfaEnabled: false 
       };
       fs.writeJsonSync(ADMIN_MFA_FILE, adminMfaData, { spaces: 2 });
       console.log(`✅ MFA secret saved for admin user`);
+      console.log(`📋 IMPORTANT: Add this to your Render environment variables to persist across deployments:`);
+      console.log(`   ADMIN_MFA_SECRET=${encryptedSecret}`);
+      console.log(`   ADMIN_MFA_ENABLED=false`);
       return true;
     } catch (error) {
       console.error('❌ Error saving admin MFA secret:', error);
@@ -286,23 +298,33 @@ function saveMFASecret(userId, secret) {
 function verifyMFAToken(userId, token) {
   console.log(`🔐 Verifying MFA token for user: ${userId}, token length: ${token?.length || 0}`);
   
-  // Handle hardcoded admin user
+  // Handle hardcoded admin user - check env var first, then file
   if (userId === 'admin' && process.env.ADMIN_USERNAME) {
     try {
-      if (!fs.existsSync(ADMIN_MFA_FILE)) {
-        console.error('❌ Admin MFA file does not exist');
-        return false;
+      let encryptedSecret = null;
+      let mfaEnabled = false;
+      
+      // First check environment variable (persists across deployments)
+      if (process.env.ADMIN_MFA_SECRET) {
+        encryptedSecret = process.env.ADMIN_MFA_SECRET;
+        mfaEnabled = process.env.ADMIN_MFA_ENABLED === 'true';
+        console.log('🔐 Using MFA secret from environment variable');
+      } 
+      // Fallback to file (for current session)
+      else if (fs.existsSync(ADMIN_MFA_FILE)) {
+        const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
+        encryptedSecret = adminMfaData.mfaSecret;
+        mfaEnabled = adminMfaData.mfaEnabled || false;
+        console.log('🔐 Using MFA secret from file');
       }
       
-      const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
-      
-      if (!adminMfaData.mfaSecret) {
+      if (!encryptedSecret) {
         console.error('❌ Admin user has no MFA secret stored');
         return false;
       }
       
       // Decrypt MFA secret before verification
-      const decryptedSecret = decrypt(adminMfaData.mfaSecret);
+      const decryptedSecret = decrypt(encryptedSecret);
       console.log(`🔑 Decrypted secret length: ${decryptedSecret.length}`);
       
       const verified = speakeasy.totp.verify({
@@ -350,15 +372,20 @@ function enableMFA(userId) {
   // Handle hardcoded admin user
   if (userId === 'admin' && process.env.ADMIN_USERNAME) {
     try {
-      if (!fs.existsSync(ADMIN_MFA_FILE)) {
-        console.error('❌ Admin MFA file does not exist');
-        return false;
+      // Update file for current session
+      if (fs.existsSync(ADMIN_MFA_FILE)) {
+        const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
+        adminMfaData.mfaEnabled = true;
+        fs.writeJsonSync(ADMIN_MFA_FILE, adminMfaData, { spaces: 2 });
       }
       
-      const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
-      adminMfaData.mfaEnabled = true;
-      fs.writeJsonSync(ADMIN_MFA_FILE, adminMfaData, { spaces: 2 });
-      console.log(`✅ MFA enabled for admin user`);
+      // If using env var, log instruction to update it
+      if (process.env.ADMIN_MFA_SECRET) {
+        console.log(`✅ MFA enabled for admin user`);
+        console.log(`📋 Update your Render environment variable: ADMIN_MFA_ENABLED=true`);
+      } else {
+        console.log(`✅ MFA enabled for admin user`);
+      }
       return true;
     } catch (error) {
       console.error('❌ Error enabling admin MFA:', error);
