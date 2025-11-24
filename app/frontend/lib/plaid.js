@@ -65,7 +65,9 @@ const client = new PlaidApi(configuration);
 module.exports.client = client;
 
 // Data storage directory
-const DATA_DIR = path.join(process.cwd(), 'lib', 'data');
+// Use persistent disk path if available (for Render), otherwise use local lib/data
+// Render persistent disk should be mounted at /data or set via DATA_DIR env var
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'lib', 'data');
 const ITEMS_FILE = path.join(DATA_DIR, 'items.json');
 
 // Ensure data directory exists

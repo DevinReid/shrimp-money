@@ -6,7 +6,9 @@ const fs = require('fs-extra');
 const path = require('path');
 const { encrypt, decrypt, encryptObject, decryptObject } = require('./encryption');
 
-const DATA_DIR = path.join(process.cwd(), 'lib', 'data');
+// Use persistent disk path if available (for Render), otherwise use local lib/data
+// Render persistent disk should be mounted at /data or set via DATA_DIR env var
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'lib', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';

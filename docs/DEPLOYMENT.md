@@ -93,13 +93,31 @@ Render offers free hosting with HTTPS, perfect for testing production Plaid inte
    JWT_EXPIRES_IN=7d
    ```
    **Note:** `PORT` is automatically set by Render - don't add it manually.
+   
+   **Add this for persistent storage:**
+   ```
+   DATA_DIR=/data
+   ```
 
-5. **Deploy:**
+5. **Add Persistent Disk (CRITICAL for data persistence):**
+   
+   **⚠️ IMPORTANT:** Without a persistent disk, user data and Plaid items will be wiped on each deploy!
+   
+   - In Render dashboard → your service → Settings
+   - Scroll to "Persistent Disks" section
+   - Click "Add Disk"
+   - **Mount Path:** `/data`
+   - **Size:** 1 GB (minimum, adjust as needed)
+   - Click "Save"
+   
+   This creates a persistent storage volume that survives deploys.
+
+6. **Deploy:**
    - Click "Create Web Service"
    - Render will automatically build and deploy
    - Your app will be available at `https://your-app-name.onrender.com`
 
-6. **Update Plaid Dashboard:**
+7. **Update Plaid Dashboard:**
    - Go to Plaid Dashboard → Team Settings → API
    - Add redirect URI: `https://your-app-name.onrender.com/api/plaid/oauth/callback`
 
