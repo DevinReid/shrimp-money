@@ -91,13 +91,13 @@ Render offers free hosting with HTTPS, perfect for testing production Plaid inte
    PLAID_OAUTH_REDIRECT_URI=https://your-app-name.onrender.com
    JWT_SECRET=your_jwt_secret_here
    JWT_EXPIRES_IN=7d
+   ADMIN_USERNAME=admin
+   ADMIN_PASSWORD_HASH=$2a$10$YourHashedPasswordHere
    ```
-   **Note:** `PORT` is automatically set by Render - don't add it manually.
-   
-   **Add this for persistent storage:**
-   ```
-   DATA_DIR=/data
-   ```
+   **Note:** 
+   - `PORT` is automatically set by Render - don't add it manually.
+   - Generate `ADMIN_PASSWORD_HASH` using: `node scripts/generate-password-hash.js yourpassword`
+   - This hardcodes a single user, perfect for personal use without a database
 
 5. **Add Persistent Disk (CRITICAL for data persistence):**
    

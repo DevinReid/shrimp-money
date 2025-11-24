@@ -70,11 +70,42 @@ function saveUsers(data) {
 }
 
 function findUserByUsername(username) {
+  // First check hardcoded user from environment variables (for single-user deployments)
+  const hardcodedUsername = process.env.ADMIN_USERNAME;
+  const hardcodedPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+  
+  if (hardcodedUsername && hardcodedUsername === username) {
+    return {
+      id: 'admin',
+      username: hardcodedUsername,
+      password: hardcodedPasswordHash,
+      mfaEnabled: false,
+      mfaSecret: null,
+      createdAt: new Date().toISOString(),
+      lastLogin: null,
+    };
+  }
+  
+  // Fallback to file-based users
   const data = readUsers();
   return data.users.find(user => user.username === username);
 }
 
 function findUserById(userId) {
+  // Check hardcoded admin user
+  if (userId === 'admin' && process.env.ADMIN_USERNAME) {
+    return {
+      id: 'admin',
+      username: process.env.ADMIN_USERNAME,
+      password: process.env.ADMIN_PASSWORD_HASH,
+      mfaEnabled: false,
+      mfaSecret: null,
+      createdAt: new Date().toISOString(),
+      lastLogin: null,
+    };
+  }
+  
+  // Fallback to file-based users
   const data = readUsers();
   return data.users.find(user => user.id === userId);
 }

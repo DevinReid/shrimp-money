@@ -207,6 +207,39 @@ NEXT_PUBLIC_APP_URL=http://localhost:4000
 
 ---
 
+#### `ADMIN_USERNAME`
+Hardcoded username for single-user deployments. When set, registration is bypassed and only this user can log in.
+
+**Example:**
+```env
+ADMIN_USERNAME=admin
+```
+
+**Note:** Must be used together with `ADMIN_PASSWORD_HASH`
+
+---
+
+#### `ADMIN_PASSWORD_HASH`
+Bcrypt hash of the admin password. Generate using the script below.
+
+**Example:**
+```env
+ADMIN_PASSWORD_HASH=$2a$10$YourHashedPasswordHere
+```
+
+**How to Generate:**
+```bash
+# From app/frontend directory
+node -e "const bcrypt=require('bcryptjs'); bcrypt.hash('yourpassword', 10).then(h=>console.log(h))"
+```
+
+**Note:** 
+- Must be used together with `ADMIN_USERNAME`
+- When both are set, the app uses hardcoded credentials instead of file-based storage
+- Perfect for single-user deployments on platforms without persistent storage
+
+---
+
 ## Complete Example `.env` File
 
 ### For Sandbox/Development
