@@ -17,6 +17,103 @@ export default function PlaidApp() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  // Define fetch functions first (they're used in onSuccess)
+  const fetchAccounts = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/plaid/accounts', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      const data = await response.json();
+      if (data.accounts) {
+        setAccounts(data);
+      } else if (data.error) {
+        // Handle error object or string
+        const errorMsg = typeof data.error === 'object' 
+          ? data.error.error_message || data.error.error_code || 'Unknown error'
+          : data.error;
+        setError(errorMsg);
+      }
+    } catch (err) {
+      console.error('Error fetching accounts:', err);
+      setError('Failed to fetch accounts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/plaid/transactions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      const data = await response.json();
+      if (data.transactions) {
+        setTransactions(data);
+      } else if (data.error) {
+        // Handle error object or string
+        const errorMsg = typeof data.error === 'object' 
+          ? data.error.error_message || data.error.error_code || 'Unknown error'
+          : data.error;
+        setError(errorMsg);
+      }
+    } catch (err) {
+      console.error('Error fetching transactions:', err);
+      setError('Failed to fetch transactions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle successful Plaid Link connection
+  const onSuccess = useCallback(async (publicToken, metadata) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Exchange public token for access token
+      const exchangeResponse = await fetch('/api/plaid/exchange_public_token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ public_token: publicToken }),
+      });
+
+      const exchangeData = await exchangeResponse.json();
+
+      if (exchangeData.success) {
+        setAccessToken(exchangeData.item_id);
+        // Automatically fetch accounts and transactions
+        await fetchAccounts();
+        await fetchTransactions();
+      } else {
+        // Handle error object or string
+        const errorMsg = exchangeData.error && typeof exchangeData.error === 'object'
+          ? exchangeData.error.error_message || exchangeData.error.error_code || 'Unknown error'
+          : exchangeData.error || 'Failed to exchange public token';
+        setError(errorMsg);
+      }
+    } catch (err) {
+      console.error('Error exchanging token:', err);
+      setError('Failed to complete account linking');
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  // Initialize usePlaidLink BEFORE useEffect that uses ready/open
+  const { open, ready } = usePlaidLink({
+    token: linkToken,
+    onSuccess,
+  });
+
   // Generate link token on component mount or when OAuth state changes
   useEffect(() => {
     if (!token) {
@@ -90,49 +187,6 @@ export default function PlaidApp() {
     generateToken();
   }, [token, searchParams, ready, open, router]);
 
-  // Handle successful Plaid Link connection
-  const onSuccess = useCallback(async (publicToken, metadata) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Exchange public token for access token
-      const exchangeResponse = await fetch('/api/plaid/exchange_public_token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ public_token: publicToken }),
-      });
-
-      const exchangeData = await exchangeResponse.json();
-
-      if (exchangeData.success) {
-        setAccessToken(exchangeData.item_id);
-        // Automatically fetch accounts and transactions
-        await fetchAccounts();
-        await fetchTransactions();
-      } else {
-        // Handle error object or string
-        const errorMsg = exchangeData.error && typeof exchangeData.error === 'object'
-          ? exchangeData.error.error_message || exchangeData.error.error_code || 'Unknown error'
-          : exchangeData.error || 'Failed to exchange public token';
-        setError(errorMsg);
-      }
-    } catch (err) {
-      console.error('Error exchanging token:', err);
-      setError('Failed to complete account linking');
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  const { open, ready } = usePlaidLink({
-    token: linkToken,
-    onSuccess,
-  });
-
   // Handle OAuth errors from redirect
   useEffect(() => {
     const oauthError = searchParams.get('oauth_error');
@@ -144,58 +198,6 @@ export default function PlaidApp() {
       router.replace('/');
     }
   }, [searchParams, router]);
-
-  const fetchAccounts = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/plaid/accounts', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      const data = await response.json();
-      if (data.accounts) {
-        setAccounts(data);
-      } else if (data.error) {
-        // Handle error object or string
-        const errorMsg = typeof data.error === 'object' 
-          ? data.error.error_message || data.error.error_code || 'Unknown error'
-          : data.error;
-        setError(errorMsg);
-      }
-    } catch (err) {
-      console.error('Error fetching accounts:', err);
-      setError('Failed to fetch accounts');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchTransactions = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/plaid/transactions', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      const data = await response.json();
-      if (data.transactions) {
-        setTransactions(data);
-      } else if (data.error) {
-        // Handle error object or string
-        const errorMsg = typeof data.error === 'object' 
-          ? data.error.error_message || data.error.error_code || 'Unknown error'
-          : data.error;
-        setError(errorMsg);
-      }
-    } catch (err) {
-      console.error('Error fetching transactions:', err);
-      setError('Failed to fetch transactions');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
