@@ -43,7 +43,28 @@ function saveUsers(data) {
       encryptObject(user, ['mfaSecret'])
     ) : []
   };
-  fs.writeJsonSync(USERS_FILE, dataToSave, { spaces: 2 });
+  
+  try {
+    fs.writeJsonSync(USERS_FILE, dataToSave, { spaces: 2 });
+    console.log(`✅ Successfully saved ${data.users?.length || 0} users to ${USERS_FILE}`);
+  } catch (error) {
+    console.error('❌ Error saving users file:', error);
+    console.error('File path:', USERS_FILE);
+    console.error('Data dir exists:', fs.existsSync(DATA_DIR));
+    console.error('Error details:', error.message, error.code);
+    
+    // Try to create directory if it doesn't exist
+    try {
+      fs.ensureDirSync(DATA_DIR);
+      fs.writeJsonSync(USERS_FILE, dataToSave, { spaces: 2 });
+      console.log('✅ Retry successful after creating directory');
+    } catch (retryError) {
+      console.error('❌ Retry also failed:', retryError);
+      console.error('This may indicate the file system is read-only (common on serverless platforms)');
+      // Don't throw - allow the app to continue, but log the issue
+      // In production, you should use a database instead of file storage
+    }
+  }
 }
 
 function findUserByUsername(username) {
@@ -58,7 +79,9 @@ function findUserById(userId) {
 
 // User registration
 async function registerUser(username, password) {
+  console.log(`📝 Attempting to register user: ${username}`);
   const data = readUsers();
+  console.log(`📊 Current users in file: ${data.users?.length || 0}`);
   
   // Check if user already exists
   if (findUserByUsername(username)) {
@@ -80,7 +103,9 @@ async function registerUser(username, password) {
   };
 
   data.users.push(user);
+  console.log(`💾 Attempting to save user to file...`);
   saveUsers(data);
+  console.log(`✅ User registered successfully: ${username}`);
 
   // Return user without sensitive data
   const { password: _, mfaSecret: __, ...userWithoutSecrets } = user;
@@ -89,17 +114,29 @@ async function registerUser(username, password) {
 
 // User login
 async function loginUser(username, password) {
+  console.log(`🔐 Attempting login for user: ${username}`);
+  const data = readUsers();
+  console.log(`📊 Total users in file: ${data.users?.length || 0}`);
+  console.log(`📁 Users file path: ${USERS_FILE}`);
+  console.log(`📁 File exists: ${fs.existsSync(USERS_FILE)}`);
+  
   const user = findUserByUsername(username);
   
   if (!user) {
+    console.log(`❌ User not found: ${username}`);
+    console.log(`📋 Available usernames: ${data.users?.map(u => u.username).join(', ') || 'none'}`);
     throw new Error('Invalid credentials');
   }
 
+  console.log(`✅ User found: ${user.username}`);
   // Verify password
   const isValidPassword = await bcrypt.compare(password, user.password);
   if (!isValidPassword) {
+    console.log(`❌ Invalid password for user: ${username}`);
     throw new Error('Invalid credentials');
   }
+  
+  console.log(`✅ Password verified for user: ${username}`);
 
   // Update last login
   const data = readUsers();

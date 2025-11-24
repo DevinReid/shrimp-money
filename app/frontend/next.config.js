@@ -10,6 +10,8 @@ const nextConfig = {
     };
     return config;
   },
+  // Add empty turbopack config to allow webpack config in dev mode
+  turbopack: {},
 };
 
 module.exports = nextConfig;
