@@ -25,17 +25,21 @@ A **link token** is used to initialize Plaid Link. It's short-lived and one-time
 ### 1. Create Link Token
 
 ```javascript
-// Backend: app/server/server.js
-app.post('/api/create_link_token', async (req, res) => {
-  const response = await client.linkTokenCreate({
-    user: { client_user_id: 'user_123' },
-    client_name: 'Plaid Connect',
-    products: ['transactions', 'auth'],
-    country_codes: ['US'],
-  });
-  res.json(response.data);
+// Backend: app/frontend/app/api/plaid/create_link_token/route.js
+const response = await client.linkTokenCreate({
+  user: { client_user_id: 'user_123' },
+  client_name: 'Bank Connect',
+  products: ['transactions', 'auth'],
+  country_codes: ['US'],
+  redirect_uri: 'https://yourdomain.com/api/plaid/oauth/callback', // Required for OAuth
 });
 ```
+
+**OAuth Redirect URI:**
+- Required for OAuth-enabled institutions
+- Must be configured in Plaid Dashboard
+- Format: `https://yourdomain.com/api/plaid/oauth/callback`
+- For development: `http://localhost:4000/api/plaid/oauth/callback`
 
 ### 2. Initialize Plaid Link
 
@@ -76,6 +80,71 @@ const transactions = await client.transactionsGet({
   end_date: '2024-01-31'
 });
 ```
+
+## OAuth Configuration
+
+Some financial institutions use OAuth instead of credential-based authentication. This application supports OAuth redirects automatically.
+
+### OAuth Flow
+
+1. **User selects OAuth institution** in Plaid Link
+2. **Plaid redirects** to the institution's OAuth page
+3. **User authenticates** with the institution
+4. **Institution redirects back** to your callback URL with `oauth_state_id`
+5. **Application continues** the Plaid Link flow automatically
+
+### Setting Up OAuth Redirect URI
+
+#### 1. Configure in Plaid Dashboard
+
+1. Log into [Plaid Dashboard](https://dashboard.plaid.com/)
+2. Go to **Team Settings** → **API**
+3. Under **Allowed redirect URIs**, add:
+   - Development: `http://localhost:4000/api/plaid/oauth/callback`
+   - Production: `https://yourdomain.com/api/plaid/oauth/callback`
+
+#### 2. Configure Environment Variables
+
+**Development (auto-detected):**
+- The redirect URI is automatically detected from request headers
+- No configuration needed for local development
+
+**Production:**
+```env
+# Option 1: Full redirect URI
+PLAID_OAUTH_REDIRECT_URI=https://yourdomain.com
+
+# Option 2: Public app URL (will append /api/plaid/oauth/callback)
+NEXT_PUBLIC_APP_URL=https://yourdomain.com
+```
+
+#### 3. OAuth Callback Route
+
+The application includes an OAuth callback route at:
+```
+/api/plaid/oauth/callback
+```
+
+This route:
+- Receives the OAuth redirect from Plaid
+- Extracts the `oauth_state_id`
+- Redirects to the frontend with the state ID
+- Frontend automatically continues the Plaid Link flow
+
+### OAuth Error Handling
+
+If OAuth authentication fails, the user is redirected back with error parameters:
+- `oauth_error=true`
+- `error_message=<error details>`
+
+The application displays these errors to the user automatically.
+
+### Testing OAuth in Sandbox
+
+Some sandbox institutions support OAuth:
+- Select an OAuth-enabled institution
+- The OAuth flow will be triggered automatically
+- Use sandbox test credentials when prompted
 
 ## Sandbox vs Production
 
@@ -320,4 +389,6 @@ Common Plaid-specific issues:
 - Invalid credentials → Check sandbox vs production
 - Item login required → User needs to reconnect
 - Rate limiting → Implement request throttling
+
+
 

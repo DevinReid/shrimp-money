@@ -21,9 +21,15 @@
   },
   "scripts": {
     "dev": "next dev -p 4000",
-    "build": "next build",
-    "start": "next start -p 4000",
-    "lint": "next lint"
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "next lint",
+    "audit": "npm audit",
+    "audit:fix": "npm audit fix",
+    "audit:critical": "npm audit --audit-level=critical",
+    "audit:high": "npm audit --audit-level=high",
+    "outdated": "npm outdated",
+    "check-eol": "node ../../scripts/check-eol.js"
   },
   "eslintConfig": {
     "extends": [

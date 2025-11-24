@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
 import { useAuth } from './auth/AuthContext';
+import { useSearchParams, useRouter } from 'next/navigation';
 import '../app/page.css';
 
 export default function PlaidApp() {
@@ -13,22 +14,37 @@ export default function PlaidApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const { token, logout, user } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
-  // Generate link token on component mount
+  // Generate link token on component mount or when OAuth state changes
   useEffect(() => {
     if (!token) return;
 
+    const oauthStateId = searchParams.get('oauth_state_id');
+
     const generateToken = async () => {
       try {
+        const requestBody = oauthStateId ? { oauth_state_id: oauthStateId } : {};
+        
         const response = await fetch('/api/plaid/create_link_token', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
           },
+          body: JSON.stringify(requestBody),
         });
         const data = await response.json();
         if (data.link_token) {
           setLinkToken(data.link_token);
+          // If we have an OAuth state ID, automatically open Plaid Link
+          if (oauthStateId && ready) {
+            // Clean up URL first
+            router.replace('/');
+            // Small delay to ensure state is updated
+            setTimeout(() => open(), 100);
+          }
         } else if (data.error) {
           // Handle error object or string
           const errorMsg = typeof data.error === 'object' 
@@ -50,7 +66,7 @@ export default function PlaidApp() {
     };
 
     generateToken();
-  }, [token]);
+  }, [token, searchParams, ready, open, router]);
 
   // Handle successful Plaid Link connection
   const onSuccess = useCallback(async (publicToken, metadata) => {
@@ -94,6 +110,18 @@ export default function PlaidApp() {
     token: linkToken,
     onSuccess,
   });
+
+  // Handle OAuth errors from redirect
+  useEffect(() => {
+    const oauthError = searchParams.get('oauth_error');
+    const oauthErrorMessage = searchParams.get('error_message');
+
+    if (oauthError) {
+      setError(oauthErrorMessage || 'OAuth authentication failed. Please try again.');
+      // Clean up URL
+      router.replace('/');
+    }
+  }, [searchParams, router]);
 
   const fetchAccounts = async () => {
     try {

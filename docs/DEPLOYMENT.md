@@ -59,7 +59,72 @@ const configuration = new Configuration({
 
 ## Deployment Options
 
-### Option 1: Heroku
+### Option 1: Render (Recommended for Quick Setup)
+
+Render offers free hosting with HTTPS, perfect for testing production Plaid integration.
+
+#### Quick Setup
+
+1. **Sign up for Render:**
+   - Go to https://render.com
+   - Sign up with GitHub (easiest)
+
+2. **Create New Web Service:**
+   - Click "New +" → "Web Service"
+   - Connect your GitHub repository
+   - Select the `plaidConnect` repository
+
+3. **Configure Service:**
+   - **Name:** `plaid-connect` (or your choice)
+   - **Environment:** `Node`
+   - **Build Command:** `cd app/frontend && npm install && npm run build`
+   - **Start Command:** `cd app/frontend && npm start`
+   - **Root Directory:** Leave empty (or set to `app/frontend` if needed)
+
+4. **Set Environment Variables:**
+   In Render dashboard, go to "Environment" tab and add:
+   ```
+   NODE_ENV=production
+   PLAID_CLIENT_ID=your_client_id_here
+   PLAID_PRODUCTION_SECRET=your_production_secret_here
+   PLAID_ENV=production
+   PLAID_OAUTH_REDIRECT_URI=https://your-app-name.onrender.com
+   JWT_SECRET=your_jwt_secret_here
+   JWT_EXPIRES_IN=7d
+   ```
+   **Note:** `PORT` is automatically set by Render - don't add it manually.
+
+5. **Deploy:**
+   - Click "Create Web Service"
+   - Render will automatically build and deploy
+   - Your app will be available at `https://your-app-name.onrender.com`
+
+6. **Update Plaid Dashboard:**
+   - Go to Plaid Dashboard → Team Settings → API
+   - Add redirect URI: `https://your-app-name.onrender.com/api/plaid/oauth/callback`
+
+#### Using render.yaml (Alternative)
+
+If you prefer configuration as code, the `render.yaml` file is already created. Just:
+1. Push your code to GitHub
+2. In Render, select "Apply render.yaml" when creating the service
+3. Render will use the configuration automatically
+
+#### Free Tier Notes
+
+- **Free tier includes:**
+  - HTTPS automatically enabled
+  - Persistent URL (doesn't change)
+  - 750 hours/month free
+  - Spins down after 15 minutes of inactivity (first request may be slow)
+
+- **To keep it always on:**
+  - Upgrade to paid plan ($7/month)
+  - Or accept the cold start delay
+
+---
+
+### Option 2: Heroku
 
 #### Setup
 
@@ -462,4 +527,6 @@ If issues occur:
 - [API Documentation](./API.md)
 - [Architecture Overview](./ARCHITECTURE.md)
 - [Troubleshooting](./TROUBLESHOOTING.md)
+
+
 

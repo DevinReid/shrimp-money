@@ -230,6 +230,45 @@ npm install
 
 ---
 
+**Error:** `redirect_uri must use HTTPS` (when testing production locally)
+
+**Problem:** Production Plaid requires HTTPS for OAuth redirect URIs, but you're running locally on HTTP.
+
+**Solution - Use ngrok (Recommended for Local Testing):**
+
+1. **Install ngrok:**
+   - Download from https://ngrok.com/download
+   - Or use: `npm install -g ngrok` (if you have Node.js)
+
+2. **Start your Next.js app** on port 4000:
+   ```bash
+   cd app/frontend
+   npm start
+   ```
+
+3. **In a new terminal, start ngrok:**
+   ```bash
+   ngrok http 4000
+   ```
+
+4. **Copy the HTTPS URL** ngrok provides (e.g., `https://abc123.ngrok.io`)
+
+5. **Update your `.env` file:**
+   ```env
+   PLAID_OAUTH_REDIRECT_URI=https://abc123.ngrok.io
+   ```
+
+6. **Add the redirect URI to Plaid Dashboard:**
+   - Go to Plaid Dashboard → Team Settings → API
+   - Add: `https://abc123.ngrok.io/api/plaid/oauth/callback`
+   - **Note:** If using free ngrok, the URL changes each time you restart ngrok
+
+7. **Restart your Next.js server** to pick up the new environment variable
+
+**Alternative:** Deploy to a staging environment with HTTPS (Heroku, Vercel, etc.)
+
+---
+
 ### Windows-Specific Issues
 
 **Issue:** `PORT=4000` not working in npm script
@@ -268,4 +307,6 @@ npm install
    - [API.md](./API.md) - Endpoint reference
    - [PLAID_INTEGRATION.md](./PLAID_INTEGRATION.md) - Plaid setup
    - [DEVELOPMENT.md](./DEVELOPMENT.md) - Development guide
+
+
 

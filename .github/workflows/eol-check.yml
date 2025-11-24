@@ -1,0 +1,85 @@
+name: EOL Software Check
+
+on:
+  schedule:
+    # Run monthly on the 1st at 9 AM UTC
+    - cron: '0 9 1 * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  check-eol:
+    name: Check for EOL Software
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        working-directory: app/frontend
+        run: npm ci
+      
+      - name: Check for EOL software
+        run: |
+          node scripts/check-eol.js || true
+      
+      - name: Check outdated packages
+        working-directory: app/frontend
+        run: |
+          npm outdated --json > eol-report.json || true
+      
+      - name: Upload EOL report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eol-software-report
+          path: |
+            eol-report.json
+          retention-days: 90
+      
+      - name: Create issue for critical EOL
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let eolReport = '';
+            try {
+              eolReport = fs.readFileSync('eol-report.json', 'utf8');
+            } catch (e) {
+              eolReport = 'EOL check completed with issues';
+            }
+            
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Critical EOL Software Detected',
+              body: `## End-of-Life Software Detected
+              
+              The monthly EOL check has identified critical or high-severity EOL software.
+              
+              ### Report
+              \`\`\`json
+              ${eolReport}
+              \`\`\`
+              
+              ### Action Required
+              Please review the EOL Software Management Policy and remediate according to defined SLAs.
+              
+              - [ ] Review EOL components
+              - [ ] Assess risk and severity
+              - [ ] Plan remediation
+              - [ ] Execute remediation
+              - [ ] Verify resolution
+              
+              See: \`docs/EOL_SOFTWARE_POLICY.md\`
+              `,
+              labels: ['eol', 'end-of-life', 'security', 'automated']
+            });
+

@@ -4,6 +4,7 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const fs = require('fs-extra');
 const path = require('path');
+const { encrypt, decrypt, encryptObject, decryptObject } = require('./encryption');
 
 const DATA_DIR = path.join(process.cwd(), 'lib', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -21,14 +22,28 @@ if (!fs.existsSync(USERS_FILE)) {
 // Helper functions for user storage
 function readUsers() {
   try {
-    return fs.readJsonSync(USERS_FILE);
+    const data = fs.readJsonSync(USERS_FILE);
+    // Decrypt sensitive fields when reading
+    if (data.users && Array.isArray(data.users)) {
+      data.users = data.users.map(user => 
+        decryptObject(user, ['mfaSecret'])
+      );
+    }
+    return data;
   } catch (error) {
     return { users: [] };
   }
 }
 
 function saveUsers(data) {
-  fs.writeJsonSync(USERS_FILE, data, { spaces: 2 });
+  // Encrypt sensitive fields before saving
+  const dataToSave = {
+    ...data,
+    users: data.users ? data.users.map(user => 
+      encryptObject(user, ['mfaSecret'])
+    ) : []
+  };
+  fs.writeJsonSync(USERS_FILE, dataToSave, { spaces: 2 });
 }
 
 function findUserByUsername(username) {
@@ -112,13 +127,14 @@ function generateMFASecret(username) {
   };
 }
 
-// Save MFA secret to user
+// Save MFA secret to user (encrypted)
 function saveMFASecret(userId, secret) {
   const data = readUsers();
   const userIndex = data.users.findIndex(u => u.id === userId);
   
   if (userIndex >= 0) {
-    data.users[userIndex].mfaSecret = secret;
+    // Encrypt MFA secret before storing
+    data.users[userIndex].mfaSecret = encrypt(secret);
     data.users[userIndex].mfaEnabled = false; // Not enabled until verified
     saveUsers(data);
     return true;
@@ -135,8 +151,11 @@ function verifyMFAToken(userId, token) {
     return false;
   }
 
+  // Decrypt MFA secret before verification
+  const decryptedSecret = decrypt(user.mfaSecret);
+
   const verified = speakeasy.totp.verify({
-    secret: user.mfaSecret,
+    secret: decryptedSecret,
     encoding: 'base32',
     token: token,
     window: 2, // Allow 2 time steps (60 seconds) of tolerance

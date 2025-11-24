@@ -26,6 +26,15 @@ cd app/server && npm install && cd ../frontend && npm install
    PORT=8000
    ```
 
+3. (Optional) For OAuth support, configure redirect URI in Plaid Dashboard:
+   - Log into [Plaid Dashboard](https://dashboard.plaid.com/)
+   - Go to **Team Settings** → **API**
+   - Under **Allowed redirect URIs**, add:
+     - Development: `http://localhost:4000/api/plaid/oauth/callback`
+     - Production: `https://yourdomain.com/api/plaid/oauth/callback`
+   
+   **Note:** OAuth redirect URI is auto-detected in development. For production, set `PLAID_OAUTH_REDIRECT_URI` in `app/frontend/.env`.
+
 ## Step 3: Start the Application
 
 ### Terminal 1 - Start Backend:

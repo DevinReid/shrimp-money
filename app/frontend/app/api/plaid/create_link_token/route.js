@@ -13,15 +13,48 @@ export async function POST(req) {
   }
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const oauthStateId = body.oauth_state_id;
+
+    // Get the base URL for OAuth redirect
+    // In production Plaid, redirect_uri MUST use HTTPS
+    // For local testing, use ngrok or set PLAID_OAUTH_REDIRECT_URI to an HTTPS URL
+    const baseUrl = process.env.PLAID_OAUTH_REDIRECT_URI || 
+                    process.env.NEXT_PUBLIC_APP_URL ||
+                    (req.headers.get('origin') || 
+                     `${req.headers.get('x-forwarded-proto') || 'http'}://${req.headers.get('host') || 'localhost:4000'}`);
+    
+    const redirectUri = `${baseUrl}/api/plaid/oauth/callback`;
+    
+    // Check if we're in production mode and redirect URI is HTTP (not allowed)
+    const isProduction = process.env.PLAID_ENV === 'production';
+    const isHttp = redirectUri.startsWith('http://');
+    
+    if (isProduction && isHttp) {
+      return NextResponse.json({
+        error: {
+          error_code: 'INVALID_REDIRECT_URI',
+          error_message: 'Production Plaid requires HTTPS for OAuth redirect URIs. For local testing, use ngrok or set PLAID_OAUTH_REDIRECT_URI to an HTTPS URL. See docs for setup instructions.',
+        },
+      }, { status: 400 });
+    }
+
     const request = {
       user: {
         client_user_id: 'user_' + Date.now(),
       },
       client_name: 'Bank Connect',
-      products: ['transactions', 'auth'],
+      products: ['transactions'], // Removed 'auth' - not available in production account
       language: 'en',
       country_codes: ['US'],
+      redirect_uri: redirectUri,
     };
+
+    // If we have an OAuth state ID, include it in the request
+    // This is used when continuing an OAuth flow after redirect
+    if (oauthStateId) {
+      request.oauth_state_id = oauthStateId;
+    }
 
     const response = await client.linkTokenCreate(request);
     return NextResponse.json(response.data);
@@ -38,7 +71,7 @@ export async function POST(req) {
       return NextResponse.json({
         error: {
           error_code: 'MISSING_CREDENTIALS',
-          error_message: 'Plaid credentials not configured. Please set PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET in .env.local',
+          error_message: 'Plaid credentials not configured. Please set PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET in .env or .env.local in the app/frontend directory',
         },
       }, { status: 500 });
     }

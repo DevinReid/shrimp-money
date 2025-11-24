@@ -104,6 +104,30 @@ JWT_SECRET=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2
 
 ---
 
+#### `ENCRYPTION_KEY`
+256-bit encryption key for AES-256-GCM data encryption at-rest. **CRITICAL: Required for data security!**
+
+**How to generate:**
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+**Example:**
+```env
+ENCRYPTION_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2
+```
+
+**Note:** 
+- Must be exactly 64 characters (hexadecimal)
+- Never commit to version control
+- Store in `.env.local` (gitignored)
+- Use different keys for development and production
+- Backup securely (password manager)
+
+**Default:** Not set (encryption disabled - ⚠️ **NOT SECURE**)
+
+---
+
 #### `JWT_EXPIRES_IN`
 JWT token expiration time. Controls how long authentication tokens remain valid.
 
@@ -122,12 +146,12 @@ JWT_EXPIRES_IN=30m  # 30 minutes
 
 ## Frontend Environment Variables
 
-Location: `app/frontend/.env`
+Location: `app/frontend/.env` or `app/frontend/.env.local`
 
 ### Optional Variables
 
 #### `PORT`
-Port number for the React development server.
+Port number for the Next.js development server.
 
 **Example:**
 ```env
@@ -137,6 +161,49 @@ PORT=4000
 **Default:** `3000` (or `4000` if set in package.json script)
 
 **Note:** The frontend is configured to use port 4000 by default to avoid conflicts.
+
+---
+
+#### `PLAID_OAUTH_REDIRECT_URI`
+Base URL for OAuth redirects. Used to construct the full OAuth callback URL.
+
+**Format:** Base URL without path (the `/api/plaid/oauth/callback` path is appended automatically)
+
+**Examples:**
+```env
+# Production
+PLAID_OAUTH_REDIRECT_URI=https://yourdomain.com
+
+# Development (usually auto-detected, but can be set explicitly)
+PLAID_OAUTH_REDIRECT_URI=http://localhost:4000
+```
+
+**Default:** Auto-detected from request headers in development
+
+**Note:** 
+- Must match the redirect URI configured in Plaid Dashboard
+- For production, set this explicitly
+- The full redirect URI will be: `${PLAID_OAUTH_REDIRECT_URI}/api/plaid/oauth/callback`
+
+---
+
+#### `NEXT_PUBLIC_APP_URL`
+Public-facing URL of your application. Used for OAuth redirects and other absolute URLs.
+
+**Examples:**
+```env
+# Production
+NEXT_PUBLIC_APP_URL=https://yourdomain.com
+
+# Development
+NEXT_PUBLIC_APP_URL=http://localhost:4000
+```
+
+**Default:** Auto-detected from request headers
+
+**Note:**
+- Used as fallback if `PLAID_OAUTH_REDIRECT_URI` is not set
+- The `NEXT_PUBLIC_` prefix makes this available to client-side code
 
 ---
 
@@ -176,6 +243,10 @@ PORT=8000
 # Authentication & Security
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 JWT_EXPIRES_IN=7d
+
+# OAuth Configuration (Frontend: app/frontend/.env)
+PLAID_OAUTH_REDIRECT_URI=https://yourdomain.com
+NEXT_PUBLIC_APP_URL=https://yourdomain.com
 ```
 
 ---

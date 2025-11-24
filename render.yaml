@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: plaid-connect-frontend
+    env: node
+    buildCommand: cd app/frontend && npm install && npm run build
+    startCommand: cd app/frontend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # PORT is automatically set by Render - don't override it
+      - key: PLAID_CLIENT_ID
+        sync: false
+      - key: PLAID_PRODUCTION_SECRET
+        sync: false
+      - key: PLAID_ENV
+        value: production
+      - key: PLAID_OAUTH_REDIRECT_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+
