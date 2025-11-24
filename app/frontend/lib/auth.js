@@ -10,6 +10,7 @@ const { encrypt, decrypt, encryptObject, decryptObject } = require('./encryption
 // Render persistent disk should be mounted at /data or set via DATA_DIR env var
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'lib', 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const ADMIN_MFA_FILE = path.join(DATA_DIR, 'admin_mfa.json'); // Separate file for admin MFA
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
@@ -19,6 +20,10 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 if (!fs.existsSync(USERS_FILE)) {
   fs.writeJsonSync(USERS_FILE, { users: [] });
+}
+// Ensure admin MFA file exists
+if (!fs.existsSync(ADMIN_MFA_FILE)) {
+  fs.writeJsonSync(ADMIN_MFA_FILE, { mfaSecret: null, mfaEnabled: false });
 }
 
 // Helper functions for user storage
@@ -105,12 +110,26 @@ function findUserByUsername(username) {
 function findUserById(userId) {
   // Check hardcoded admin user
   if (userId === 'admin' && process.env.ADMIN_USERNAME) {
+    let mfaEnabled = false;
+    let mfaSecret = null;
+    
+    // Try to load MFA data from file
+    try {
+      if (fs.existsSync(ADMIN_MFA_FILE)) {
+        const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
+        mfaEnabled = adminMfaData.mfaEnabled || false;
+        mfaSecret = adminMfaData.mfaSecret || null;
+      }
+    } catch (error) {
+      console.error('Error reading admin MFA file:', error);
+    }
+    
     return {
       id: 'admin',
       username: process.env.ADMIN_USERNAME,
       password: process.env.ADMIN_PASSWORD_HASH,
-      mfaEnabled: false,
-      mfaSecret: null,
+      mfaEnabled,
+      mfaSecret,
       createdAt: new Date().toISOString(),
       lastLogin: null,
     };
@@ -228,6 +247,25 @@ function generateMFASecret(username) {
 
 // Save MFA secret to user (encrypted)
 function saveMFASecret(userId, secret) {
+  console.log(`🔐 Saving MFA secret for user: ${userId}`);
+  
+  // Handle hardcoded admin user
+  if (userId === 'admin' && process.env.ADMIN_USERNAME) {
+    try {
+      const adminMfaData = { 
+        mfaSecret: encrypt(secret), 
+        mfaEnabled: false 
+      };
+      fs.writeJsonSync(ADMIN_MFA_FILE, adminMfaData, { spaces: 2 });
+      console.log(`✅ MFA secret saved for admin user`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving admin MFA secret:', error);
+      return false;
+    }
+  }
+  
+  // Handle file-based users
   const data = readUsers();
   const userIndex = data.users.findIndex(u => u.id === userId);
   
@@ -236,22 +274,63 @@ function saveMFASecret(userId, secret) {
     data.users[userIndex].mfaSecret = encrypt(secret);
     data.users[userIndex].mfaEnabled = false; // Not enabled until verified
     saveUsers(data);
+    console.log(`✅ MFA secret saved for file-based user: ${userId}`);
     return true;
   }
   
+  console.error(`❌ User not found for MFA secret save: ${userId}`);
   return false;
 }
 
 // Verify MFA token
 function verifyMFAToken(userId, token) {
+  console.log(`🔐 Verifying MFA token for user: ${userId}, token length: ${token?.length || 0}`);
+  
+  // Handle hardcoded admin user
+  if (userId === 'admin' && process.env.ADMIN_USERNAME) {
+    try {
+      if (!fs.existsSync(ADMIN_MFA_FILE)) {
+        console.error('❌ Admin MFA file does not exist');
+        return false;
+      }
+      
+      const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
+      
+      if (!adminMfaData.mfaSecret) {
+        console.error('❌ Admin user has no MFA secret stored');
+        return false;
+      }
+      
+      // Decrypt MFA secret before verification
+      const decryptedSecret = decrypt(adminMfaData.mfaSecret);
+      console.log(`🔑 Decrypted secret length: ${decryptedSecret.length}`);
+      
+      const verified = speakeasy.totp.verify({
+        secret: decryptedSecret,
+        encoding: 'base32',
+        token: token,
+        window: 2, // Allow 2 time steps (60 seconds) of tolerance
+      });
+      
+      console.log(`🔐 MFA verification result: ${verified ? '✅ Valid' : '❌ Invalid'}`);
+      return verified;
+    } catch (error) {
+      console.error('❌ Error verifying admin MFA token:', error);
+      return false;
+    }
+  }
+  
+  // Handle file-based users
   const user = findUserById(userId);
   
   if (!user || !user.mfaSecret) {
+    console.error(`❌ User not found or no MFA secret: ${userId}`);
     return false;
   }
 
   // Decrypt MFA secret before verification
   const decryptedSecret = decrypt(user.mfaSecret);
+  console.log(`🔑 Decrypted secret length: ${decryptedSecret.length}`);
 
   const verified = speakeasy.totp.verify({
     secret: decryptedSecret,
@@ -259,21 +338,46 @@ function verifyMFAToken(userId, token) {
     token: token,
     window: 2, // Allow 2 time steps (60 seconds) of tolerance
   });
-
+  
+  console.log(`🔐 MFA verification result: ${verified ? '✅ Valid' : '❌ Invalid'}`);
   return verified;
 }
 
 // Enable MFA for user (after verification)
 function enableMFA(userId) {
+  console.log(`🔐 Enabling MFA for user: ${userId}`);
+  
+  // Handle hardcoded admin user
+  if (userId === 'admin' && process.env.ADMIN_USERNAME) {
+    try {
+      if (!fs.existsSync(ADMIN_MFA_FILE)) {
+        console.error('❌ Admin MFA file does not exist');
+        return false;
+      }
+      
+      const adminMfaData = fs.readJsonSync(ADMIN_MFA_FILE);
+      adminMfaData.mfaEnabled = true;
+      fs.writeJsonSync(ADMIN_MFA_FILE, adminMfaData, { spaces: 2 });
+      console.log(`✅ MFA enabled for admin user`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error enabling admin MFA:', error);
+      return false;
+    }
+  }
+  
+  // Handle file-based users
   const data = readUsers();
   const userIndex = data.users.findIndex(u => u.id === userId);
   
   if (userIndex >= 0) {
     data.users[userIndex].mfaEnabled = true;
     saveUsers(data);
+    console.log(`✅ MFA enabled for file-based user: ${userId}`);
     return true;
   }
   
+  console.error(`❌ User not found for MFA enable: ${userId}`);
   return false;
 }
 

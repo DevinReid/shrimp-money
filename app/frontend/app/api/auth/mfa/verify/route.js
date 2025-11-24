@@ -16,7 +16,10 @@ export async function POST(req) {
     const { token } = await req.json();
     const userId = authResult.user.userId;
 
+    console.log(`🔐 MFA verify request - User ID: ${userId}, Token provided: ${!!token}`);
+
     if (!token) {
+      console.error('❌ MFA token is required');
       return NextResponse.json(
         { error: 'MFA token is required' },
         { status: 400 }
@@ -26,11 +29,14 @@ export async function POST(req) {
     const isValid = verifyMFAToken(userId, token);
 
     if (!isValid) {
+      console.error(`❌ MFA token verification failed for user: ${userId}`);
       return NextResponse.json(
         { error: 'Invalid MFA token' },
         { status: 400 }
       );
     }
+    
+    console.log(`✅ MFA token verified successfully for user: ${userId}`);
 
     // Enable MFA for user
     enableMFA(userId);
