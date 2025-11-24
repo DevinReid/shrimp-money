@@ -1,6 +1,6 @@
 'use client';
 
-import { AuthProvider } from './auth/AuthProvider';
+import { AuthProvider } from './auth/AuthContext';
 
 export function Providers({ children }) {
   return <AuthProvider>{children}</AuthProvider>;
