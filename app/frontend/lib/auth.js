@@ -138,8 +138,7 @@ async function loginUser(username, password) {
   
   console.log(`✅ Password verified for user: ${username}`);
 
-  // Update last login
-  const data = readUsers();
+  // Update last login (reuse existing data variable)
   const userIndex = data.users.findIndex(u => u.id === user.id);
   if (userIndex >= 0) {
     data.users[userIndex].lastLogin = new Date().toISOString();
