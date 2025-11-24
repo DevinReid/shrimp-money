@@ -74,7 +74,16 @@ function findUserByUsername(username) {
   const hardcodedUsername = process.env.ADMIN_USERNAME;
   const hardcodedPasswordHash = process.env.ADMIN_PASSWORD_HASH;
   
+  console.log(`🔍 Checking hardcoded user - Username set: ${!!hardcodedUsername}, Password hash set: ${!!hardcodedPasswordHash}`);
+  if (hardcodedPasswordHash) {
+    console.log(`🔑 Password hash preview: ${hardcodedPasswordHash.substring(0, 20)}...`);
+  }
+  
   if (hardcodedUsername && hardcodedUsername === username) {
+    if (!hardcodedPasswordHash) {
+      console.error('❌ ADMIN_USERNAME is set but ADMIN_PASSWORD_HASH is missing!');
+      return null; // Don't return user without password hash
+    }
     return {
       id: 'admin',
       username: hardcodedUsername,
@@ -162,10 +171,22 @@ async function loginUser(username, password) {
   }
 
   console.log(`✅ User found: ${user.username}`);
+  console.log(`🔑 User ID: ${user.id}`);
+  console.log(`🔑 Password hash exists: ${!!user.password}`);
+  if (user.password) {
+    console.log(`🔑 Password hash preview: ${user.password.substring(0, 20)}...`);
+  }
+  
   // Verify password
+  if (!user.password) {
+    console.error('❌ User has no password hash!');
+    throw new Error('Invalid credentials');
+  }
+  
   const isValidPassword = await bcrypt.compare(password, user.password);
   if (!isValidPassword) {
     console.log(`❌ Invalid password for user: ${username}`);
+    console.log(`🔑 Password hash format check: ${user.password.startsWith('$2') ? 'Valid bcrypt format' : 'Invalid format'}`);
     throw new Error('Invalid credentials');
   }
   
