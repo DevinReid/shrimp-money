@@ -71,12 +71,14 @@ function saveUsers(data) {
 
 function findUserByUsername(username) {
   // First check hardcoded user from environment variables (for single-user deployments)
-  const hardcodedUsername = process.env.ADMIN_USERNAME;
-  const hardcodedPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+  const hardcodedUsername = process.env.ADMIN_USERNAME?.trim();
+  const hardcodedPasswordHash = process.env.ADMIN_PASSWORD_HASH?.trim();
   
   console.log(`🔍 Checking hardcoded user - Username set: ${!!hardcodedUsername}, Password hash set: ${!!hardcodedPasswordHash}`);
   if (hardcodedPasswordHash) {
     console.log(`🔑 Password hash preview: ${hardcodedPasswordHash.substring(0, 20)}...`);
+    console.log(`🔑 Password hash length: ${hardcodedPasswordHash.length}`);
+    console.log(`🔑 Password hash ends with: ...${hardcodedPasswordHash.substring(hardcodedPasswordHash.length - 10)}`);
   }
   
   if (hardcodedUsername && hardcodedUsername === username) {
@@ -87,7 +89,7 @@ function findUserByUsername(username) {
     return {
       id: 'admin',
       username: hardcodedUsername,
-      password: hardcodedPasswordHash,
+      password: hardcodedPasswordHash, // Already trimmed above
       mfaEnabled: false,
       mfaSecret: null,
       createdAt: new Date().toISOString(),
@@ -175,6 +177,8 @@ async function loginUser(username, password) {
   console.log(`🔑 Password hash exists: ${!!user.password}`);
   if (user.password) {
     console.log(`🔑 Password hash preview: ${user.password.substring(0, 20)}...`);
+    console.log(`🔑 Password hash length: ${user.password.length}`);
+    console.log(`🔑 Password hash ends with: ...${user.password.substring(user.password.length - 10)}`);
   }
   
   // Verify password
@@ -183,10 +187,15 @@ async function loginUser(username, password) {
     throw new Error('Invalid credentials');
   }
   
-  const isValidPassword = await bcrypt.compare(password, user.password);
+  // Trim password hash in case of whitespace issues
+  const trimmedHash = user.password.trim();
+  console.log(`🔑 Comparing password - Hash length: ${trimmedHash.length}, Hash starts with: ${trimmedHash.substring(0, 7)}`);
+  
+  const isValidPassword = await bcrypt.compare(password, trimmedHash);
   if (!isValidPassword) {
     console.log(`❌ Invalid password for user: ${username}`);
-    console.log(`🔑 Password hash format check: ${user.password.startsWith('$2') ? 'Valid bcrypt format' : 'Invalid format'}`);
+    console.log(`🔑 Password hash format check: ${trimmedHash.startsWith('$2') ? 'Valid bcrypt format' : 'Invalid format'}`);
+    console.log(`🔑 Entered password length: ${password.length}`);
     throw new Error('Invalid credentials');
   }
   
