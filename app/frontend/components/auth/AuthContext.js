@@ -2,11 +2,8 @@
 
 import { createContext, useContext, useState, useEffect } from 'react';
 
-// Create context first, before any other exports
+// Create context - must be defined before useAuth hook
 const AuthContext = createContext(null);
-
-// Export context for direct access if needed
-export { AuthContext };
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
