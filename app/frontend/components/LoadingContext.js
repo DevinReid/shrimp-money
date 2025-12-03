@@ -1,11 +1,11 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, Suspense } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 const LoadingContext = createContext(null);
 
-export function LoadingProvider({ children }) {
+function LoadingProviderInner({ children }) {
   const [loading, setLoading] = useState(true); // Start with true for initial page load
   const [loadingCount, setLoadingCount] = useState(1); // Start with 1 for initial load
   const pathname = usePathname();
@@ -76,6 +76,14 @@ export function LoadingProvider({ children }) {
     <LoadingContext.Provider value={{ loading, startLoading, stopLoading }}>
       {children}
     </LoadingContext.Provider>
+  );
+}
+
+export function LoadingProvider({ children }) {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoadingProviderInner>{children}</LoadingProviderInner>
+    </Suspense>
   );
 }
 
