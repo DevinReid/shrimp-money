@@ -16,7 +16,30 @@ export async function POST(req) {
   }
 
   try {
-    const { username, password } = await req.json();
+    const { username, password, invitationCode } = await req.json();
+
+    // Check if registration is restricted by invitation code
+    const requiredInvitationCode = process.env.REGISTRATION_INVITATION_CODE;
+    if (requiredInvitationCode) {
+      if (!invitationCode) {
+        return NextResponse.json(
+          { error: 'Invitation code is required for registration' },
+          { status: 400 }
+        );
+      }
+      if (invitationCode !== requiredInvitationCode) {
+        return NextResponse.json(
+          { error: 'Invalid invitation code' },
+          { status: 403 }
+        );
+      }
+    } else {
+      // If no invitation code is set, registration is disabled
+      return NextResponse.json(
+        { error: 'Registration is currently disabled' },
+        { status: 403 }
+      );
+    }
 
     if (!username || !password) {
       return NextResponse.json(

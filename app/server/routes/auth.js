@@ -28,7 +28,21 @@ const authLimiter = rateLimit({
 // Register new user
 router.post('/register', authLimiter, async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, invitationCode } = req.body;
+
+    // Check if registration is restricted by invitation code
+    const requiredInvitationCode = process.env.REGISTRATION_INVITATION_CODE;
+    if (requiredInvitationCode) {
+      if (!invitationCode) {
+        return res.status(400).json({ error: 'Invitation code is required for registration' });
+      }
+      if (invitationCode !== requiredInvitationCode) {
+        return res.status(403).json({ error: 'Invalid invitation code' });
+      }
+    } else {
+      // If no invitation code is set, registration is disabled
+      return res.status(403).json({ error: 'Registration is currently disabled' });
+    }
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });

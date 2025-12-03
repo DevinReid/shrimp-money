@@ -6,6 +6,7 @@ function Register({ onLoginClick }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
@@ -26,7 +27,7 @@ function Register({ onLoginClick }) {
 
     setLoading(true);
 
-    const result = await register(username, password);
+    const result = await register(username, password, invitationCode);
 
     if (result.success) {
       // Registration successful - redirect to MFA setup
@@ -46,6 +47,21 @@ function Register({ onLoginClick }) {
         {error && <div className="auth-error">{error}</div>}
 
         <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="invitation-code">Invitation Code</label>
+            <input
+              type="text"
+              id="invitation-code"
+              value={invitationCode}
+              onChange={(e) => setInvitationCode(e.target.value)}
+              required
+              autoComplete="off"
+              disabled={loading}
+              placeholder="Enter invitation code"
+            />
+            <small>Registration requires a valid invitation code</small>
+          </div>
+
           <div className="form-group">
             <label htmlFor="reg-username">Username</label>
             <input
