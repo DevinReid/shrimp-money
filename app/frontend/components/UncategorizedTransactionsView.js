@@ -6,6 +6,22 @@ import CategoryDropdown from './CategoryDropdown';
 import AddRuleButton from './AddRuleButton';
 import TransactionNote from './TransactionNote';
 
+// Utility functions moved outside component to avoid initialization issues
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(amount);
+};
+
+const formatDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
 export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDialogOpen, onRulesApplied, onDeleteTransaction: parentDeleteTransaction }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -13,17 +29,6 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
   const [searchQuery, setSearchQuery] = useState('');
   const { token } = useAuth();
   
-  // Refresh when refreshTrigger changes (but not on initial mount)
-  const prevRefreshTriggerRef = useRef(refreshTrigger);
-  useEffect(() => {
-    if (refreshTrigger !== undefined && refreshTrigger !== prevRefreshTriggerRef.current) {
-      prevRefreshTriggerRef.current = refreshTrigger;
-      if (refreshTrigger > 0) {
-        fetchUncategorized();
-      }
-    }
-  }, [refreshTrigger, fetchUncategorized]);
-
   const fetchUncategorized = useCallback(async () => {
     if (!token) return;
     
@@ -54,24 +59,20 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
     }
   }, [token]);
 
+  // Refresh when refreshTrigger changes (but not on initial mount)
+  const prevRefreshTriggerRef = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger !== prevRefreshTriggerRef.current) {
+      prevRefreshTriggerRef.current = refreshTrigger;
+      if (refreshTrigger > 0) {
+        fetchUncategorized();
+      }
+    }
+  }, [refreshTrigger, fetchUncategorized]);
+
   useEffect(() => {
     fetchUncategorized();
   }, [fetchUncategorized]);
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
 
   const handleCategoryChange = useCallback((transactionId, newCategory) => {
     // Don't remove immediately - the bulk dialog will handle removal
@@ -151,7 +152,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
         setLoading(false);
       }
     }
-  }, [parentDeleteTransaction, token, formatCurrency, formatDate]);
+  }, [parentDeleteTransaction, token]);
 
   // Filter transactions based on search query
   const filteredTransactions = transactions.filter(transaction => {
