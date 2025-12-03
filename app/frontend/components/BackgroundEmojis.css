@@ -1,0 +1,227 @@
+/* 🦐⭐ Floating Background Emojis - Shrimp & Stars Animation ⭐🦐 */
+
+.background-emojis {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.floating-emoji {
+  position: absolute;
+  opacity: 0.3;
+  user-select: none;
+  will-change: transform;
+  filter: blur(0.3px);
+  /* White neon glow effect */
+  text-shadow: 
+    0 0 10px rgba(255, 255, 255, 0.9),
+    0 0 20px rgba(255, 255, 255, 0.7),
+    0 0 30px rgba(255, 255, 255, 0.5),
+    0 0 40px rgba(255, 255, 255, 0.3);
+}
+
+/* Combined animation - float across screen with swimming and spinning */
+/* All emojis start off-screen left and travel fully across to off-screen right */
+@keyframes floatAcross {
+  0% {
+    transform: translateX(-150px) translateY(0) rotate(0deg);
+  }
+  12.5% {
+    transform: translateX(12.5vw) translateY(-15px) rotate(45deg);
+  }
+  25% {
+    transform: translateX(25vw) translateY(-20px) rotate(90deg);
+  }
+  37.5% {
+    transform: translateX(37.5vw) translateY(-10px) rotate(135deg);
+  }
+  50% {
+    transform: translateX(50vw) translateY(10px) rotate(180deg);
+  }
+  62.5% {
+    transform: translateX(62.5vw) translateY(15px) rotate(225deg);
+  }
+  75% {
+    transform: translateX(75vw) translateY(-15px) rotate(270deg);
+  }
+  87.5% {
+    transform: translateX(87.5vw) translateY(-5px) rotate(315deg);
+  }
+  100% {
+    transform: translateX(calc(100vw + 150px)) translateY(0) rotate(360deg);
+  }
+}
+
+/* Different animation timings for variety */
+.floating-emoji {
+  animation: floatAcross 25s linear infinite;
+}
+
+.floating-emoji:nth-child(odd) {
+  animation: floatAcross 30s linear infinite;
+}
+
+.floating-emoji:nth-child(even) {
+  animation: floatAcross 28s linear infinite reverse;
+}
+
+/* Different starting positions for variety */
+.floating-emoji:nth-child(3n) {
+  top: 10%;
+  animation-duration: 22s;
+}
+
+.floating-emoji:nth-child(3n+1) {
+  top: 30%;
+  animation-duration: 32s;
+}
+
+.floating-emoji:nth-child(3n+2) {
+  top: 50%;
+  animation-duration: 26s;
+}
+
+.floating-emoji:nth-child(4n) {
+  top: 70%;
+  animation-duration: 29s;
+}
+
+.floating-emoji:nth-child(5n) {
+  top: 85%;
+  animation-duration: 35s;
+}
+
+/* Trailing dot effects */
+.trail-dot {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 
+    0 0 8px rgba(255, 255, 255, 0.9),
+    0 0 16px rgba(255, 255, 255, 0.6),
+    0 0 24px rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+  top: 50%;
+  left: 50%;
+  transform-origin: center;
+}
+
+.trail-dot-1 {
+  width: 5px;
+  height: 5px;
+  animation: trailFade 1.5s ease-out infinite;
+  animation-delay: 0s;
+  transform: translate(-20px, -10px);
+}
+
+.trail-dot-2 {
+  width: 4px;
+  height: 4px;
+  animation: trailFade 1.5s ease-out infinite;
+  animation-delay: 0.15s;
+  transform: translate(-30px, -15px);
+}
+
+.trail-dot-3 {
+  width: 3.5px;
+  height: 3.5px;
+  animation: trailFade 1.5s ease-out infinite;
+  animation-delay: 0.3s;
+  transform: translate(-40px, -20px);
+}
+
+.trail-dot-4 {
+  width: 3px;
+  height: 3px;
+  animation: trailFade 1.5s ease-out infinite;
+  animation-delay: 0.45s;
+  transform: translate(-50px, -25px);
+}
+
+.trail-dot-5 {
+  width: 2.5px;
+  height: 2.5px;
+  animation: trailFade 1.5s ease-out infinite;
+  animation-delay: 0.6s;
+  transform: translate(-60px, -30px);
+}
+
+@keyframes trailFade {
+  0% {
+    opacity: 0.9;
+    transform: translate(-20px, -10px) scale(1);
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-30px, -18px) scale(0.3);
+  }
+}
+
+/* Different trail positions for variety - trails behind emoji */
+.floating-emoji:nth-child(odd) .trail-dot-1 {
+  transform: translate(-18px, -12px);
+}
+
+.floating-emoji:nth-child(odd) .trail-dot-2 {
+  transform: translate(-28px, -17px);
+}
+
+.floating-emoji:nth-child(odd) .trail-dot-3 {
+  transform: translate(-38px, -22px);
+}
+
+.floating-emoji:nth-child(odd) .trail-dot-4 {
+  transform: translate(-48px, -27px);
+}
+
+.floating-emoji:nth-child(odd) .trail-dot-5 {
+  transform: translate(-58px, -32px);
+}
+
+.floating-emoji:nth-child(even) .trail-dot-1 {
+  transform: translate(-22px, -8px);
+}
+
+.floating-emoji:nth-child(even) .trail-dot-2 {
+  transform: translate(-32px, -13px);
+}
+
+.floating-emoji:nth-child(even) .trail-dot-3 {
+  transform: translate(-42px, -18px);
+}
+
+.floating-emoji:nth-child(even) .trail-dot-4 {
+  transform: translate(-52px, -23px);
+}
+
+.floating-emoji:nth-child(even) .trail-dot-5 {
+  transform: translate(-62px, -28px);
+}
+
+/* Slightly more visible on hover (optional, subtle) */
+.floating-emoji:hover {
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+}
+
+/* Responsive - reduce size and opacity on mobile */
+@media (max-width: 768px) {
+  .floating-emoji {
+    font-size: 16px !important;
+    opacity: 0.25;
+  }
+
+  .trail-dot {
+    width: 2px;
+    height: 2px;
+  }
+}
+

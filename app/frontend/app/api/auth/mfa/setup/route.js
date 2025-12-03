@@ -14,24 +14,32 @@ export async function POST(req) {
 
   try {
     const userId = authResult.user.userId;
-    const user = findUserById(userId);
+    console.log(`🔐 MFA setup request - User ID: ${userId}`);
+    
+    const user = await findUserById(userId);
 
     if (!user) {
+      console.error(`❌ User not found: ${userId}`);
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
+    console.log(`📋 User MFA status - Enabled: ${user.mfaEnabled}, Has Secret: ${!!user.mfaSecret}`);
+    
     if (user.mfaEnabled) {
+      console.error(`❌ MFA already enabled for user: ${userId}`);
       return NextResponse.json(
         { error: 'MFA is already enabled for this user' },
         { status: 400 }
       );
     }
+    
+    console.log(`✅ MFA setup allowed - proceeding to generate secret`);
 
     const { secret, qrCodeUrl } = generateMFASecret(user.username);
-    saveMFASecret(userId, secret);
+    await saveMFASecret(userId, secret);
 
     // Generate QR code image
     const qrCodeDataUrl = await generateQRCode(qrCodeUrl);

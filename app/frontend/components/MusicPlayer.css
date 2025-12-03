@@ -1,0 +1,208 @@
+/* 🎵 Y2K Music Player - Girly Pop Vibes 🎵 */
+
+.music-player {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.95) 0%, 
+    rgba(255, 240, 235, 0.95) 100%);
+  padding: 12px 16px;
+  border-radius: 50px;
+  box-shadow: 
+    0 4px 20px rgba(255, 107, 107, 0.3),
+    0 2px 8px rgba(255, 105, 180, 0.2);
+  border: 2px solid var(--shrimp-shell);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  transition: all 0.3s ease;
+  /* Prevent interference with page interactions */
+  pointer-events: auto;
+  /* Ensure it doesn't cause layout shifts */
+  will-change: transform;
+}
+
+.music-player:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 6px 24px rgba(255, 107, 107, 0.4),
+    0 4px 12px rgba(255, 105, 180, 0.3);
+}
+
+.music-toggle-btn {
+  background: linear-gradient(135deg, 
+    var(--shrimp-coral) 0%, 
+    var(--y2k-hot-pink) 100%);
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+  flex-shrink: 0;
+}
+
+.music-toggle-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(255, 107, 107, 0.5);
+}
+
+.music-toggle-btn:active {
+  transform: scale(0.95);
+}
+
+.music-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.music-mute-btn {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.music-mute-btn:hover {
+  background: rgba(255, 107, 107, 0.1);
+  transform: scale(1.1);
+}
+
+.music-volume-slider {
+  width: 100px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--shrimp-shell);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.music-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, 
+    var(--shrimp-coral) 0%, 
+    var(--y2k-hot-pink) 100%);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(255, 107, 107, 0.4);
+  transition: all 0.2s ease;
+}
+
+.music-volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 3px 8px rgba(255, 107, 107, 0.5);
+}
+
+.music-volume-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, 
+    var(--shrimp-coral) 0%, 
+    var(--y2k-hot-pink) 100%);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(255, 107, 107, 0.4);
+  transition: all 0.2s ease;
+}
+
+.music-volume-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 3px 8px rgba(255, 107, 107, 0.5);
+}
+
+/* Responsive - smaller on mobile and prevent interference */
+@media (max-width: 768px) {
+  .music-player {
+    bottom: 10px;
+    right: 10px;
+    padding: 8px 10px;
+    gap: 6px;
+    z-index: 9999;
+    /* Prevent touch interference */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    /* Ensure it doesn't block content */
+    pointer-events: auto;
+  }
+
+  .music-toggle-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+    /* Better touch target */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .music-mute-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .music-volume-slider {
+    width: 70px;
+    touch-action: pan-x;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Hide volume controls on very small screens to save space */
+  @media (max-width: 480px) {
+    .music-controls {
+      display: none;
+    }
+    
+    .music-player {
+      padding: 10px;
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      justify-content: center;
+    }
+  }
+}
+
+/* Animation for when music is playing */
+@keyframes music-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(255, 107, 107, 0.6);
+  }
+}
+
+.music-player:has(.music-toggle-btn:active) .music-toggle-btn,
+.music-player:has(audio[playing]) .music-toggle-btn {
+  animation: music-pulse 1s ease-in-out infinite;
+}
+

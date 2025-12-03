@@ -149,8 +149,8 @@ function PlaidApp() {
       <header className="App-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
           <div>
-            <h1>Bank Account Manager</h1>
-            <p>Connect your bank account to view balances and transactions</p>
+            <h1>Shrimp Money</h1>
+            <p>Your money, but make it shrimpy 🦐💜</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             {user && (

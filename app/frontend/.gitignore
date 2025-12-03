@@ -35,3 +35,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+
+/src/generated/prisma
+
+# music files (optional - uncomment if you don't want to commit music files)
+# /public/music/*.mp3
+# /public/music/*.ogg
+# /public/music/*.wav

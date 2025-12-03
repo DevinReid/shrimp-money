@@ -26,7 +26,7 @@ export async function POST(req) {
       );
     }
 
-    const isValid = verifyMFAToken(userId, token);
+    const isValid = await verifyMFAToken(userId, token);
 
     if (!isValid) {
       console.error(`❌ MFA token verification failed for user: ${userId}`);
@@ -39,10 +39,10 @@ export async function POST(req) {
     console.log(`✅ MFA token verified successfully for user: ${userId}`);
 
     // Enable MFA for user
-    enableMFA(userId);
+    await enableMFA(userId);
 
     // Generate new token with MFA verified flag
-    const user = findUserById(userId);
+    const user = await findUserById(userId);
     const { password, mfaSecret, ...userWithoutSecrets } = user;
     const mfaToken = generateMFAToken(userWithoutSecrets);
 

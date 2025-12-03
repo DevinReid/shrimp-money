@@ -23,7 +23,7 @@ export async function POST(req) {
       );
     }
 
-    const isValid = verifyMFAToken(userId, token);
+    const isValid = await verifyMFAToken(userId, token);
 
     if (!isValid) {
       return NextResponse.json(
@@ -33,7 +33,7 @@ export async function POST(req) {
     }
 
     // Generate new token with MFA verified flag
-    const user = findUserById(userId);
+    const user = await findUserById(userId);
     const { password, mfaSecret, ...userWithoutSecrets } = user;
     const mfaToken = generateMFAToken(userWithoutSecrets);
 

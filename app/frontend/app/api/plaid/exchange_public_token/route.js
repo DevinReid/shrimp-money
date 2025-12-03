@@ -28,15 +28,17 @@ export async function POST(req) {
 
     const { access_token, item_id } = response.data;
 
-    // Save item information
+    // Save item information with environment tracking
     const itemsData = readItems();
     const existingItemIndex = itemsData.items.findIndex(
       (item) => item.item_id === item_id
     );
 
+    const currentEnv = process.env.PLAID_ENV || 'sandbox';
     const itemData = {
       item_id,
       access_token,
+      environment: currentEnv, // Track which environment this token is for
       created_at: new Date().toISOString(),
     };
 

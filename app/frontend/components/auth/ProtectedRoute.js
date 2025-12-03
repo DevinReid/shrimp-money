@@ -6,6 +6,7 @@ import Login from './Login';
 import Register from './Register';
 import MFASetup from './MFASetup';
 import MFAVerify from './MFAVerify';
+import ShrimpSpinner from '../ShrimpSpinner';
 
 function ProtectedRoute({ children }) {
   const { user, token, mfaVerified, loading } = useAuth();
@@ -19,7 +20,8 @@ function ProtectedRoute({ children }) {
     } else if (user && user.mfaEnabled && !mfaVerified && !showMFAVerify) {
       setShowMFAVerify(true);
     }
-  }, [user, mfaVerified, showMFASetup, showMFAVerify]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, mfaVerified]);
 
   if (loading) {
     return (
@@ -34,9 +36,13 @@ function ProtectedRoute({ children }) {
           background: 'white', 
           padding: '40px', 
           borderRadius: '12px',
-          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.1)'
+          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '20px'
         }}>
-          <h2>Loading...</h2>
+          <ShrimpSpinner size="large" />
         </div>
       </div>
     );
@@ -88,8 +94,13 @@ function ProtectedRoute({ children }) {
         background: 'white', 
         padding: '40px', 
         borderRadius: '12px',
-        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.1)'
+        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '20px'
       }}>
+        <ShrimpSpinner size="large" />
         <h2>Setting up authentication...</h2>
       </div>
     </div>

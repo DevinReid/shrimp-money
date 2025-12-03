@@ -12,7 +12,7 @@ function MFASetup({ onComplete }) {
   const [loading, setLoading] = useState(false);
   const [setupLoading, setSetupLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
-  const { token, verifyMFA, user } = useAuth();
+  const { token, verifyMFA, user, verifyToken } = useAuth();
 
   useEffect(() => {
     // Detect if user is on mobile device
@@ -52,7 +52,16 @@ function MFASetup({ onComplete }) {
         setQrCode(data.qrCode);
         setSecret(data.secret);
       } else {
-        setError(data.error || 'Failed to set up MFA');
+        // If MFA is already enabled, show continue option
+        if (data.error && data.error.includes('already enabled')) {
+          setError('MFA is already set up for your account.');
+          // Allow user to continue
+          setTimeout(() => {
+            onComplete();
+          }, 2000);
+        } else {
+          setError(data.error || 'Failed to set up MFA');
+        }
       }
     } catch (error) {
       setError('Network error. Please try again.');
@@ -104,6 +113,10 @@ function MFASetup({ onComplete }) {
     const result = await verifyMFA(mfaCode, false);
 
     if (result.success) {
+      // Refresh user data to get updated MFA status
+      if (verifyToken) {
+        await verifyToken();
+      }
       onComplete();
     } else {
       setError(result.error || 'Invalid code. Please try again.');
@@ -133,7 +146,43 @@ function MFASetup({ onComplete }) {
           </p>
         </div>
 
-        {error && <div className="auth-error">{error}</div>}
+        {error && (
+          <div>
+            {error.includes('already enabled') ? (
+              <div className="auth-success" style={{ 
+                background: '#d4edda', 
+                color: '#155724', 
+                border: '1px solid #c3e6cb',
+                padding: '20px',
+                borderRadius: '8px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ marginBottom: '15px' }}>
+                  <strong>✓ MFA is Already Set Up</strong>
+                  <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>
+                    Your account is already protected with multi-factor authentication. 
+                    You can continue to the app.
+                  </p>
+                </div>
+                <button 
+                  onClick={async () => {
+                    // Refresh user data before continuing
+                    if (verifyToken) {
+                      await verifyToken();
+                    }
+                    onComplete();
+                  }}
+                  className="auth-button"
+                  style={{ width: '100%', marginTop: '10px' }}
+                >
+                  ✓ Continue to App
+                </button>
+              </div>
+            ) : (
+              <div className="auth-error">{error}</div>
+            )}
+          </div>
+        )}
 
         {qrCode && (
           <div className="mfa-setup">

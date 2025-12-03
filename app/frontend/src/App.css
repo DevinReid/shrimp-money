@@ -1,75 +1,178 @@
+/* 🦐💖 2000's GIRLY POP MEETS SHRIMP - App.css 💖🦐 */
+
 .App {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  position: relative;
+  z-index: 1;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   ✨ HEADER - Y2K Bubble Bar ✨
+═══════════════════════════════════════════════════════════ */
 .App-header {
-  background: rgba(255, 255, 255, 0.95);
-  padding: 2rem;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.95) 0%, 
+    rgba(255, 240, 235, 0.95) 50%,
+    rgba(255, 255, 255, 0.95) 100%);
+  padding: 1.5rem 2rem;
   text-align: center;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 
+    0 4px 24px rgba(255, 107, 107, 0.15),
+    0 2px 8px rgba(255, 105, 180, 0.1);
+  position: relative;
+  backdrop-filter: blur(10px);
+}
+
+.App-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, 
+    var(--shrimp-coral, #FF6B6B) 0%, 
+    var(--y2k-hot-pink, #FF69B4) 25%,
+    var(--purple-pop, #9B59B6) 50%,
+    var(--y2k-hot-pink, #FF69B4) 75%,
+    var(--shrimp-coral, #FF6B6B) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
 }
 
 .App-header h1 {
-  color: #333;
+  color: var(--shrimp-coral, #FF6B6B);
   margin-bottom: 0.5rem;
   font-size: 2.5rem;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  text-shadow: 2px 2px 0px rgba(255, 182, 193, 0.5);
+}
+
+.App-header h1::before {
+  content: '🦐 ';
+}
+
+.App-header h1::after {
+  content: ' 🦐';
 }
 
 .App-header p {
-  color: #666;
+  color: var(--text-secondary, #7A6B6B);
   font-size: 1.1rem;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   🌊 MAIN CONTENT AREA 🌊
+═══════════════════════════════════════════════════════════ */
 .App-main {
   max-width: 1200px;
   margin: 2rem auto;
   padding: 0 1rem;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   ⚠️ ERROR MESSAGE ⚠️
+═══════════════════════════════════════════════════════════ */
 .error-message {
-  background: #fee;
-  border: 1px solid #fcc;
-  color: #c33;
-  padding: 1rem;
-  border-radius: 8px;
+  background: linear-gradient(135deg, #FFF0F0 0%, #FFE8E8 100%);
+  border: 2px solid var(--shrimp-coral, #FF6B6B);
+  color: #B44444;
+  padding: 1rem 1.5rem;
+  border-radius: 16px;
   margin-bottom: 2rem;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(255, 107, 107, 0.2);
 }
 
+/* ═══════════════════════════════════════════════════════════
+   💖 LINK SECTION 💖
+═══════════════════════════════════════════════════════════ */
 .link-section {
-  background: white;
+  background: rgba(255, 255, 255, 0.85);
   padding: 3rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(255, 107, 107, 0.15), 0 2px 8px rgba(255, 105, 180, 0.1);
   text-align: center;
+  border: 2px solid rgba(255, 107, 107, 0.2);
+  position: relative;
+  overflow: hidden;
 }
 
+.link-section::before {
+  content: '✨';
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  font-size: 24px;
+  animation: float 2s ease-in-out infinite;
+}
+
+.link-section::after {
+  content: '💜';
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  font-size: 24px;
+  animation: float 2s ease-in-out infinite 0.5s;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   🦐 BUTTONS 🦐
+═══════════════════════════════════════════════════════════ */
 .link-button {
-  background: #667eea;
+  background: linear-gradient(135deg, 
+    var(--shrimp-coral, #FF6B6B) 0%, 
+    var(--y2k-hot-pink, #FF69B4) 50%,
+    var(--shrimp-salmon, #FF8E8E) 100%);
+  background-size: 200% 200%;
   color: white;
   border: none;
-  padding: 1rem 2rem;
+  padding: 1rem 2.5rem;
   font-size: 1.2rem;
-  border-radius: 8px;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
+  border-radius: 50px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s ease;
   margin-bottom: 2rem;
+  box-shadow: 0 4px 20px rgba(255, 107, 107, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .link-button:hover:not(:disabled) {
-  background: #5568d3;
+  background-position: 100% 0;
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 8px 30px rgba(255, 107, 107, 0.5);
 }
 
 .link-button:disabled {
-  background: #ccc;
+  background: linear-gradient(135deg, #DDD 0%, #CCC 100%);
   cursor: not-allowed;
+  box-shadow: none;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   🏖️ SANDBOX INFO 🏖️
+═══════════════════════════════════════════════════════════ */
 .sandbox-info {
-  background: #fff3cd;
-  border: 2px solid #ffc107;
+  background: linear-gradient(135deg, 
+    var(--shrimp-shell, #FFD5C8) 0%, 
+    var(--purple-light, #D7BDE2) 100%);
+  border: 2px dashed var(--purple-pop, #9B59B6);
   padding: 1.5rem;
-  border-radius: 8px;
+  border-radius: 16px;
   text-align: left;
   display: inline-block;
   margin-top: 1rem;
@@ -77,17 +180,23 @@
 }
 
 .sandbox-info code {
-  background: #e9ecef;
+  background: white;
+  border: 1px solid var(--purple-pop, #9B59B6);
   padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  font-family: 'Courier New', monospace;
+  border-radius: 8px;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  color: var(--purple-deep, #7D3C98);
 }
 
+/* ═══════════════════════════════════════════════════════════
+   💅 DATA SECTION 💅
+═══════════════════════════════════════════════════════════ */
 .data-section {
-  background: white;
+  background: rgba(255, 255, 255, 0.85);
   padding: 2rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(255, 107, 107, 0.15);
+  border: 2px solid rgba(255, 107, 107, 0.2);
 }
 
 .action-buttons {
@@ -98,30 +207,48 @@
 }
 
 .action-button {
-  background: #667eea;
+  background: linear-gradient(135deg, 
+    var(--shrimp-coral, #FF6B6B) 0%, 
+    var(--y2k-bubblegum, #FF85A2) 100%);
   color: white;
   border: none;
   padding: 0.75rem 1.5rem;
-  border-radius: 8px;
+  border-radius: 50px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s ease;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
 }
 
 .action-button:hover:not(:disabled) {
-  background: #5568d3;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
 }
 
 .action-button:disabled {
-  background: #ccc;
+  background: linear-gradient(135deg, #E0E0E0 0%, #CCCCCC 100%);
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .loading {
   text-align: center;
   padding: 2rem;
-  color: #666;
+  color: var(--text-secondary, #7A6B6B);
+  font-size: 1.1rem;
 }
 
+.loading::before {
+  content: '🦐';
+  display: inline-block;
+  animation: float 1s ease-in-out infinite;
+  margin-right: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   💰 ACCOUNTS & TRANSACTIONS 💰
+═══════════════════════════════════════════════════════════ */
 .accounts-section,
 .transactions-section {
   margin-top: 2rem;
@@ -129,9 +256,18 @@
 
 .accounts-section h2,
 .transactions-section h2 {
-  color: #333;
+  color: var(--shrimp-coral, #FF6B6B);
   margin-bottom: 1.5rem;
   font-size: 1.8rem;
+  font-family: 'Fredoka', sans-serif;
+}
+
+.accounts-section h2::before {
+  content: '💳 ';
+}
+
+.transactions-section h2::before {
+  content: '📊 ';
 }
 
 .accounts-grid {
@@ -142,36 +278,49 @@
 }
 
 .account-card {
-  background: #f8f9fa;
+  background: linear-gradient(145deg, #FFFFFF 0%, var(--shrimp-light, #FFF0EB) 100%);
   padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
+  border-radius: 20px;
+  border: 2px solid var(--shrimp-shell, #FFD5C8);
+  box-shadow: 0 4px 16px rgba(255, 107, 107, 0.1);
+  transition: all 0.3s ease;
+}
+
+.account-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(255, 107, 107, 0.2);
 }
 
 .account-card h3 {
-  color: #333;
+  color: var(--shrimp-coral, #FF6B6B);
   margin-bottom: 0.5rem;
   font-size: 1.3rem;
+  font-family: 'Fredoka', sans-serif;
 }
 
 .account-type {
-  color: #666;
+  color: var(--text-secondary, #7A6B6B);
   font-size: 0.9rem;
   margin-bottom: 0.5rem;
   text-transform: capitalize;
 }
 
 .account-mask {
-  color: #999;
+  color: var(--text-light, #9A8B8B);
   font-size: 0.85rem;
   margin-bottom: 1rem;
+  font-family: 'Fira Code', monospace;
+  background: var(--shrimp-shell, #FFD5C8);
+  padding: 4px 8px;
+  border-radius: 8px;
+  display: inline-block;
 }
 
 .balance {
   display: flex;
   justify-content: space-between;
-  padding: 0.5rem 0;
-  border-top: 1px solid #e9ecef;
+  padding: 0.75rem 0;
+  border-top: 2px dashed var(--shrimp-shell, #FFD5C8);
 }
 
 .balance:first-of-type {
@@ -180,14 +329,15 @@
 }
 
 .balance-label {
-  color: #666;
+  color: var(--text-secondary, #7A6B6B);
   font-size: 0.9rem;
 }
 
 .balance-amount {
-  font-weight: bold;
-  color: #333;
-  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--shrimp-coral, #FF6B6B);
+  font-size: 1.2rem;
+  font-family: 'Fredoka', sans-serif;
 }
 
 .transactions-list {
@@ -199,11 +349,17 @@
 .transaction-item {
   display: flex;
   flex-direction: column;
-  padding: 1rem;
-  border-bottom: 1px solid #e9ecef;
-  background: #f8f9fa;
-  margin-bottom: 0.5rem;
-  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--shrimp-shell, #FFD5C8);
+  background: linear-gradient(135deg, #FFFFFF 0%, var(--shrimp-light, #FFF0EB) 100%);
+  margin-bottom: 0.75rem;
+  border-radius: 16px;
+  transition: all 0.2s ease;
+}
+
+.transaction-item:hover {
+  border-color: var(--y2k-hot-pink, #FF69B4);
+  transform: translateX(4px);
 }
 
 .transaction-main {
@@ -215,42 +371,70 @@
 
 .transaction-name {
   font-weight: 600;
-  color: #333;
-  font-size: 1.1rem;
+  color: var(--text-primary, #4A3F3F);
+  font-size: 1rem;
 }
 
 .transaction-date {
-  color: #666;
-  font-size: 0.9rem;
+  color: var(--text-secondary, #7A6B6B);
+  font-size: 0.85rem;
+  background: var(--shrimp-shell, #FFD5C8);
+  padding: 4px 10px;
+  border-radius: 20px;
 }
 
 .transaction-amount {
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: #333;
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  color: var(--shrimp-coral, #FF6B6B);
   margin-bottom: 0.5rem;
 }
 
 .transaction-category {
-  color: #666;
-  font-size: 0.85rem;
-  font-style: italic;
+  color: var(--text-light, #9A8B8B);
+  font-size: 0.8rem;
+  background: linear-gradient(135deg, var(--purple-light, #D7BDE2) 0%, var(--shrimp-shell, #FFD5C8) 100%);
+  padding: 4px 10px;
+  border-radius: 12px;
+  display: inline-block;
 }
 
 .transaction-count {
   text-align: center;
-  color: #666;
+  color: var(--text-secondary, #7A6B6B);
   padding-top: 1rem;
-  border-top: 1px solid #e9ecef;
+  border-top: 2px dashed var(--shrimp-shell, #FFD5C8);
 }
 
+.transaction-count::before {
+  content: '🦐 ';
+}
+
+.transaction-count::after {
+  content: ' 🦐';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   📱 RESPONSIVE 📱
+═══════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   .App-header h1 {
-    font-size: 2rem;
+    font-size: 1.8rem;
+  }
+
+  .App-header h1::before,
+  .App-header h1::after {
+    content: '';
   }
 
   .link-section {
     padding: 2rem 1.5rem;
+  }
+
+  .link-section::before,
+  .link-section::after {
+    display: none;
   }
 
   .accounts-grid {
@@ -265,4 +449,3 @@
     width: 100%;
   }
 }
-

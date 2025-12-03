@@ -13,7 +13,7 @@ export async function GET(req) {
   }
 
   try {
-    const user = findUserById(authResult.user.userId);
+    const user = await findUserById(authResult.user.userId);
     if (!user) {
       return NextResponse.json(
         { error: 'User not found' },
