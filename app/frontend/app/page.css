@@ -25,6 +25,13 @@
   backdrop-filter: blur(10px);
 }
 
+/* Disable expensive backdrop-filter on mobile/iOS to prevent input lag */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  .app-header {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
 .app-header::after {
   content: '';
   position: absolute;
@@ -170,6 +177,18 @@
   /* Preload - always rendered but hidden */
   will-change: left;
 }
+
+/* Disable backdrop-filter on mobile/iOS for hamburger menu */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  .hamburger-menu {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  
+  .menu-overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 
 .hamburger-menu.open {
   left: 0;
@@ -527,6 +546,14 @@
   position: relative;
   z-index: 0;
   /* Container sits below tabs, tabs overlap the top border */
+}
+
+/* Additional mobile/iOS optimizations for data containers */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  .data-container {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════

@@ -7,11 +7,24 @@ import './CursorSpinner.css';
 export default function CursorSpinner() {
   const { loading } = useLoading();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [isMobile, setIsMobile] = useState(false);
   const canvasRef = useRef(null);
   const animationFrameRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    
+    // Detect mobile/iOS devices and disable spinner for performance
+    const checkMobile = () => {
+      const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                     window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+      setIsMobile(mobile);
+      return mobile;
+    };
+    
+    if (checkMobile()) {
+      return; // Don't initialize cursor spinner on mobile
+    }
 
     const handleMouseMove = (e) => {
       setMousePosition({ x: e.clientX, y: e.clientY });
@@ -76,7 +89,8 @@ export default function CursorSpinner() {
     }
   }, [loading]);
 
-  if (!loading) return null;
+  // Don't render on mobile to improve performance
+  if (!loading || isMobile) return null;
 
   return (
     <>

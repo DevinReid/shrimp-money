@@ -17,7 +17,7 @@
   user-select: none;
   will-change: transform;
   filter: blur(0.3px);
-  /* White neon glow effect */
+  /* White neon glow effect - keep the sparkle vibe on desktop */
   text-shadow: 
     0 0 10px rgba(255, 255, 255, 0.9),
     0 0 20px rgba(255, 255, 255, 0.7),
@@ -212,16 +212,34 @@
   transition: opacity 0.3s ease;
 }
 
-/* Responsive - reduce size and opacity on mobile */
-@media (max-width: 768px) {
+/* Responsive - reduce size and opacity on mobile, remove sparkles to keep vibe but improve performance */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
   .floating-emoji {
-    font-size: 16px !important;
-    opacity: 0.25;
+    font-size: 20px !important;
+    opacity: 0.2;
+    /* Remove expensive sparkle effects on mobile but keep emojis for the vibe */
+    text-shadow: none !important;
+    filter: none !important;
+    /* Simplify but keep animations - slower = less GPU work */
+    animation-duration: 40s !important;
+    will-change: auto !important;
   }
 
   .trail-dot {
-    width: 2px;
-    height: 2px;
+    /* Disable trail dots on mobile - they add 5x more animated elements */
+    display: none !important;
+  }
+}
+
+/* Disable animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .floating-emoji {
+    animation: none !important;
+    opacity: 0.1;
+  }
+  
+  .trail-dot {
+    display: none !important;
   }
 }
 
