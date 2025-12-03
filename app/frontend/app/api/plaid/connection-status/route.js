@@ -1,17 +1,13 @@
 import { NextResponse } from 'next/server';
-import { requireMFA } from '@/lib/middleware/auth';
+import { authenticate } from '@/lib/middleware/auth';
 import { readItems } from '@/lib/plaid';
 
-/**
- * Check if there's an existing Plaid connection
- * Returns the item_id if connected, null otherwise
- */
 export async function GET(req) {
-  const authResult = requireMFA(req);
+  const authResult = authenticate(req);
   
   if (authResult.error) {
     return NextResponse.json(
-      { error: authResult.error, requiresMFA: authResult.requiresMFA },
+      { error: authResult.error },
       { status: authResult.status }
     );
   }
@@ -38,7 +34,7 @@ export async function GET(req) {
 
     // Get the most recent item
     const item = matchingItems.sort((a, b) => 
-      new Date(b.created_at) - new Date(a.created_at)
+      new Date(b.created_at || 0) - new Date(a.created_at || 0)
     )[0];
 
     return NextResponse.json({
@@ -49,12 +45,12 @@ export async function GET(req) {
     });
   } catch (error) {
     console.error('Error checking connection status:', error);
-    return NextResponse.json({
-      connected: false,
-      error: error.message,
-    }, { status: 500 });
+    return NextResponse.json(
+      { 
+        error: 'Error checking connection status',
+        connected: false,
+      },
+      { status: 500 }
+    );
   }
 }
-
-
-
