@@ -13,7 +13,7 @@ export async function GET(req) {
   }
 
   try {
-    const itemsData = readItems();
+    const itemsData = await readItems();
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
 
     // Filter items by current environment

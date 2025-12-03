@@ -29,7 +29,7 @@ export async function POST(req) {
     const { access_token, item_id } = response.data;
 
     // Save item information with environment tracking
-    const itemsData = readItems();
+    const itemsData = await readItems();
     const existingItemIndex = itemsData.items.findIndex(
       (item) => item.item_id === item_id
     );
@@ -48,7 +48,7 @@ export async function POST(req) {
       itemsData.items.push(itemData);
     }
 
-    saveItems(itemsData);
+    await saveItems(itemsData);
 
     return NextResponse.json({
       success: true,

@@ -23,7 +23,7 @@ export async function GET(req) {
     const fetchHistory = searchParams.get('fetch_history') === 'true';
     const predictionDays = parseInt(searchParams.get('prediction_days') || '30');
 
-    const itemsData = readItems();
+    const itemsData = await readItems();
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
 
     if (itemsData.items.length === 0) {

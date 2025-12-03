@@ -70,7 +70,7 @@ export async function GET(req) {
     }
 
     // Get categorized transactions to find potential recurring payments
-    const itemsData = readItems();
+    const itemsData = await readItems();
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
     
     let allTransactions = [];

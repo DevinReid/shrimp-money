@@ -177,7 +177,7 @@ export async function POST(req) {
       );
     }
 
-    const itemsData = readItems();
+    const itemsData = await readItems();
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
 
     if (itemsData.items.length === 0) {

@@ -3,6 +3,17 @@ const fs = require('fs-extra');
 const path = require('path');
 const { encrypt, decrypt, encryptObject, decryptObject } = require('./encryption');
 
+// Try to import Prisma - will be undefined if DATABASE_URL is not set
+let prisma = null;
+try {
+  if (process.env.DATABASE_URL) {
+    prisma = require('./prisma');
+  }
+} catch (error) {
+  console.warn('⚠️ Prisma not available, falling back to file storage:', error.message);
+}
+const USE_DB = !!prisma;
+
 // Load environment variables explicitly as fallback (Next.js loads .env and .env.local automatically)
 // This ensures variables are loaded even if Next.js doesn't pick them up
 if (typeof require !== 'undefined') {
@@ -79,7 +90,33 @@ if (!fs.existsSync(ITEMS_FILE)) {
 }
 
 // Helper function to read items (with decryption)
-function readItems() {
+// Database is primary, file storage is fallback
+async function readItems() {
+  // Try database first if available
+  if (USE_DB) {
+    try {
+      const dbItems = await prisma.plaidItem.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      
+      if (dbItems.length > 0) {
+        // Convert database items to the expected format
+        const items = dbItems.map(item => ({
+          item_id: item.itemId,
+          access_token: decrypt(item.accessToken), // Decrypt access token
+          environment: item.environment,
+          created_at: item.createdAt.toISOString(),
+        }));
+        
+        console.log(`✅ Loaded ${items.length} Plaid items from database`);
+        return { items };
+      }
+    } catch (error) {
+      console.warn('⚠️ Error reading items from database, falling back to file storage:', error.message);
+    }
+  }
+  
+  // Fallback to file storage
   try {
     const data = fs.readJsonSync(ITEMS_FILE);
     // Decrypt access tokens when reading
@@ -95,15 +132,51 @@ function readItems() {
 }
 
 // Helper function to save items (with encryption)
-function saveItems(data) {
-  // Encrypt access tokens before saving
+// Database is primary, file storage is fallback
+async function saveItems(data) {
+  if (!data.items || !Array.isArray(data.items)) {
+    console.warn('⚠️ No items to save');
+    return;
+  }
+
+  // Try database first if available
+  if (USE_DB) {
+    try {
+      // Process each item
+      for (const item of data.items) {
+        const encryptedToken = encrypt(item.access_token);
+        
+        await prisma.plaidItem.upsert({
+          where: { itemId: item.item_id },
+          update: {
+            accessToken: encryptedToken,
+            environment: item.environment || process.env.PLAID_ENV || 'sandbox',
+            updatedAt: new Date(),
+          },
+          create: {
+            itemId: item.item_id,
+            accessToken: encryptedToken,
+            environment: item.environment || process.env.PLAID_ENV || 'sandbox',
+          },
+        });
+      }
+      
+      console.log(`✅ Saved ${data.items.length} Plaid items to database`);
+      return; // Success, don't fall back to file
+    } catch (error) {
+      console.warn('⚠️ Error saving items to database, falling back to file storage:', error.message);
+    }
+  }
+  
+  // Fallback to file storage
   const dataToSave = {
     ...data,
-    items: data.items ? data.items.map(item => 
+    items: data.items.map(item => 
       encryptObject(item, ['access_token'])
-    ) : []
+    )
   };
   fs.writeJsonSync(ITEMS_FILE, dataToSave, { spaces: 2 });
+  console.log(`✅ Saved ${data.items.length} Plaid items to file storage`);
 }
 
 // Helper function to save account data (with encryption)

@@ -37,7 +37,7 @@ export async function DELETE(req, { params }) {
     }
 
     // Get the current item
-    const itemsData = readItems();
+    const itemsData = await readItems();
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
     const matchingItems = itemsData.items.filter(item => {
       if (!item.environment) {

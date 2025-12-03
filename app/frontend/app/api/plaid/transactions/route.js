@@ -17,7 +17,7 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const forceRefresh = searchParams.get('refresh') === 'true';
 
-    const itemsData = readItems();
+    const itemsData = await readItems();
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
 
     if (itemsData.items.length === 0) {

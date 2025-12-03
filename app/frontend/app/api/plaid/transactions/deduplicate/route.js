@@ -18,7 +18,7 @@ export async function POST(req) {
   }
 
   try {
-    const itemsData = readItems();
+    const itemsData = await readItems();
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
 
     const matchingItems = itemsData.items.filter(item => {

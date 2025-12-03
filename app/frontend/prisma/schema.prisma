@@ -67,6 +67,18 @@ model PlaidCustomCategory {
   @@map("plaid_custom_categories")
 }
 
+// Plaid items (access tokens) - shared across all users
+model PlaidItem {
+  id          String   @id @default(cuid())
+  itemId      String   @unique // Plaid item_id
+  accessToken String   // Encrypted access token
+  environment String   @default("sandbox") // sandbox, development, or production
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("plaid_items")
+}
+
 // Plaid account data storage
 model PlaidAccountData {
   id          String   @id @default(cuid())
