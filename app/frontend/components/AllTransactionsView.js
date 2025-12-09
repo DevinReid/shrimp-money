@@ -508,7 +508,7 @@ export default function AllTransactionsView({ onBulkDialogOpen, onRulesApplied, 
                     </button>
                   </div>
                 </div>
-                <div className="transaction-delete-column" style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="transaction-delete-column" style={{ gap: '4px', alignItems: 'center', justifyContent: 'center' }}>
                   <button
                     onClick={() => handleDeleteTransaction(
                       transaction.transaction_id,

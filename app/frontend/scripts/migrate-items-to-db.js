@@ -108,3 +108,5 @@ migrateItemsToDatabase()
     process.exit(1);
   });
 
+
+

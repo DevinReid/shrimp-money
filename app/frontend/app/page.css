@@ -1170,7 +1170,12 @@
 
 /* Hide delete button in transaction-other-actions on desktop (it's in separate column) */
 .transaction-other-actions .transaction-delete-button {
-  display: none;
+  display: none !important;
+}
+
+/* Show delete column on desktop */
+.transaction-delete-column {
+  display: flex;
 }
 
 /* Mobile: Put category on its own line, other actions stay right-aligned */
