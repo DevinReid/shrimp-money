@@ -269,7 +269,7 @@ function PlaidApp() {
                         {formatCurrency(Math.abs(transaction.amount))}
                       </div>
                       <div className="transaction-category">
-                        {transaction.category?.join(' / ') || 'Uncategorized'}
+                        {transaction.userCategory || 'Uncategorized'}
                       </div>
                     </div>
                   ))}

@@ -39,7 +39,7 @@ function detectSubscriptions(transactions) {
         merchant: merchant,
         amount: amount,
         transactions: [],
-        category: transaction.category || [],
+        category: transaction.userCategory || null,
       };
     }
     

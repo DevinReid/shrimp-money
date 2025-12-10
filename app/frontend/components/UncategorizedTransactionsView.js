@@ -164,9 +164,6 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
     if (transaction.name?.toLowerCase().includes(query)) return true;
     if (transaction.merchant_name?.toLowerCase().includes(query)) return true;
     
-    // Search in category
-    if (transaction.category?.some(cat => cat.toLowerCase().includes(query))) return true;
-    
     // Search in amount (convert to string for search)
     const amountStr = Math.abs(transaction.amount).toFixed(2);
     if (amountStr.includes(query.replace('$', '').replace(',', ''))) return true;
@@ -384,7 +381,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
                     )}
                   </div>
                   <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                    {transaction.userCategory || (transaction.category?.join(' / ') || 'Uncategorized')}
+                    {transaction.userCategory || 'Uncategorized'}
                   </div>
                 </div>
                 <div style={{ fontSize: '14px', color: '#6b7280' }}>

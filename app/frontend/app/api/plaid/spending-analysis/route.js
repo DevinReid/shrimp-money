@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireMFA } from '@/lib/middleware/auth';
-import { readItems, readTransactionData } from '@/lib/plaid';
+import { readItems } from '@/lib/plaid';
 const prisma = require('@/lib/prisma');
 
 /**
@@ -21,7 +21,7 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const year = parseInt(searchParams.get('year') || new Date().getFullYear());
     
-    // Get all transactions from normalized table (preferred) or JSON blob (fallback)
+    // Get all transactions from normalized PlaidTransaction table
     const itemsData = await readItems();
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
     
@@ -38,113 +38,77 @@ export async function GET(req) {
           new Date(b.created_at) - new Date(a.created_at)
         )[0];
 
-        // Try normalized table first (NEW - preferred method)
-        if (prisma && prisma.plaidTransaction) {
-          try {
-            const normalizedTransactions = await prisma.plaidTransaction.findMany({
-              where: { itemId: item.item_id },
-              orderBy: { date: 'desc' },
-            });
-            
-            if (normalizedTransactions.length > 0) {
-              // Convert normalized format back to Plaid format for compatibility
-              allTransactions = normalizedTransactions.map(t => ({
-                transaction_id: t.transactionId,
-                account_id: t.accountId,
-                name: t.name,
-                merchant_name: t.merchantName,
-                amount: t.amount,
-                date: t.date.toISOString().split('T')[0],
-                category: t.category ? (Array.isArray(t.category) ? t.category : JSON.parse(JSON.stringify(t.category))) : null,
-                iso_currency_code: t.isoCurrencyCode,
-                pending: t.pending,
-                transaction_code: t.transactionCode,
-                // Include user category directly from table (no need to look up separately!)
-                userCategory: t.userCategory,
-                // Include raw data if available
-                ...(t.rawData ? JSON.parse(JSON.stringify(t.rawData)) : {}),
-              }));
-              console.log(`✅ Loaded ${allTransactions.length} transactions from normalized table`);
-            }
-          } catch (dbError) {
-            console.log('⚠️ Could not read from normalized table:', dbError.message);
-          }
+        // Use normalized table - this is now our primary source of truth
+        if (!prisma) {
+          throw new Error('Database not available');
         }
 
-        // Fallback to JSON blob if normalized table is empty
-        if (allTransactions.length === 0 && prisma && prisma.plaidTransactionData) {
-          try {
-            const dbData = await prisma.plaidTransactionData.findUnique({
-              where: { itemId: item.item_id },
-            });
-            if (dbData && dbData.transactions) {
-              allTransactions = Array.isArray(dbData.transactions) 
-                ? dbData.transactions 
-                : (dbData.transactions.transactions || []);
-              console.log(`⚠️ Loaded ${allTransactions.length} transactions from JSON blob (fallback)`);
-            }
-          } catch (dbError) {
-            console.log('⚠️ Could not read from database:', dbError.message);
+        try {
+          // Query the normalized PlaidTransaction table directly
+          const normalizedTransactions = await prisma.plaidTransaction.findMany({
+            where: { itemId: item.item_id },
+            orderBy: { date: 'desc' },
+          });
+          
+          // Convert normalized format to expected format
+          allTransactions = normalizedTransactions.map(t => ({
+            transaction_id: t.transactionId,
+            account_id: t.accountId,
+            name: t.name,
+            merchant_name: t.merchantName,
+            amount: t.amount,
+            date: t.date.toISOString().split('T')[0],
+            iso_currency_code: t.isoCurrencyCode,
+            pending: t.pending,
+            transaction_code: t.transactionCode,
+            // User category is already in the table - no lookup needed!
+            userCategory: t.userCategory,
+          }));
+          
+          console.log(`✅ Loaded ${allTransactions.length} transactions from normalized PlaidTransaction table`);
+        } catch (dbError) {
+          console.error('❌ Error reading from normalized table:', dbError.message);
+          // Check if it's a model not found error
+          if (dbError.message && (
+            dbError.message.includes('plaidTransaction') || 
+            dbError.message.includes('Unknown model') ||
+            dbError.message.includes('does not exist')
+          )) {
+            throw new Error('PlaidTransaction model not found. The Prisma client may need to be regenerated. Please restart the dev server.');
           }
-        }
-
-        // Final fallback to file storage
-        if (allTransactions.length === 0) {
-          const fileData = readTransactionData(item.item_id);
-          if (fileData && fileData.transactions) {
-            allTransactions = fileData.transactions || [];
-            console.log(`⚠️ Loaded ${allTransactions.length} transactions from file (fallback)`);
-          }
+          throw new Error(`Failed to load transactions: ${dbError.message}`);
         }
       }
     }
+    
+    if (allTransactions.length === 0) {
+      return NextResponse.json({
+        error: 'No transactions found. Please ensure transactions are imported.',
+      }, { status: 404 });
+    }
 
-    // Get user categories - if using normalized table, categories are already included
-    // Otherwise, build category map from PlaidTransactionCategory table
+    // Build category map from transactions (userCategory is already in the data)
+    // Also check for orphaned categories in PlaidTransactionCategory table
     let categoryMap = {};
-    let allCategoryIds = new Set();
     let orphanedCategories = [];
     
-    // Check if we're using normalized table (userCategory already in data)
-    const usingNormalizedTable = allTransactions.length > 0 && allTransactions[0].userCategory !== undefined;
+    // Categories are already in the transaction data from normalized table
+    allTransactions.forEach(t => {
+      if (t.userCategory) {
+        categoryMap[t.transaction_id] = t.userCategory;
+      }
+    });
     
-    if (usingNormalizedTable) {
-      // Categories are already in the transaction data, just build map for consistency
-      allTransactions.forEach(t => {
-        if (t.userCategory) {
-          categoryMap[t.transaction_id] = t.userCategory;
-          allCategoryIds.add(t.transaction_id);
-        }
-      });
-      
-      // Check for orphaned categories (in category table but not in transactions)
-      if (prisma && prisma.plaidTransactionCategory) {
-        const allCategories = await prisma.plaidTransactionCategory.findMany();
-        const transactionIds = new Set(allTransactions.map(t => t.transaction_id));
-        orphanedCategories = allCategories
-          .filter(c => !transactionIds.has(c.transactionId))
-          .map(c => ({
-            transactionId: c.transactionId,
-            category: c.category,
-          }));
-      }
-    } else {
-      // Fallback: build category map from PlaidTransactionCategory table
-      if (prisma && prisma.plaidTransactionCategory) {
-        const categories = await prisma.plaidTransactionCategory.findMany();
-        categories.forEach(c => {
-          categoryMap[c.transactionId] = c.category;
-          allCategoryIds.add(c.transactionId);
-        });
-      }
-      
-      // Check for orphaned categories
+    // Check for orphaned categories (in category table but not in transactions)
+    if (prisma && prisma.plaidTransactionCategory) {
+      const allCategories = await prisma.plaidTransactionCategory.findMany();
       const transactionIds = new Set(allTransactions.map(t => t.transaction_id));
-      const orphanedCategoryIds = [...allCategoryIds].filter(id => !transactionIds.has(id));
-      orphanedCategories = orphanedCategoryIds.map(id => ({
-        transactionId: id,
-        category: categoryMap[id],
-      }));
+      orphanedCategories = allCategories
+        .filter(c => !transactionIds.has(c.transactionId))
+        .map(c => ({
+          transactionId: c.transactionId,
+          category: c.category,
+        }));
     }
 
     // Filter transactions for the selected year and add user categories
@@ -166,8 +130,8 @@ export async function GET(req) {
         return txDate >= yearStart && txDate <= yearEnd;
       })
       .map(t => {
-        // Use userCategory from transaction if available, otherwise look up in categoryMap
-        const userCategory = t.userCategory || categoryMap[t.transaction_id] || null;
+        // userCategory is already in the transaction data from normalized table
+        const userCategory = t.userCategory || null;
         // Use user's category to determine if it's income
         // If categorized as "Income", treat as income regardless of amount sign
         // Otherwise fall back to Plaid convention (positive = expense)

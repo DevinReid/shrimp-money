@@ -65,7 +65,6 @@ async function main() {
           merchantName: txn.merchant_name || null,
           amount: parseFloat(txn.amount) || 0,
           date: new Date(txn.date),
-          category: txn.category ? JSON.parse(JSON.stringify(txn.category)) : null,
           isoCurrencyCode: txn.iso_currency_code || null,
           pending: txn.pending || false,
           transactionCode: txn.transaction_code || null,

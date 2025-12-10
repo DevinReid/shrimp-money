@@ -574,7 +574,7 @@ export default function PlaidApp() {
           </div>
         </div>
         <div className="transaction-category" style={{ fontSize: '11px', color: '#6b7280' }}>
-          {transaction.userCategory || (transaction.category?.join(' / ') || 'Uncategorized')}
+          {transaction.userCategory || 'Uncategorized'}
         </div>
       </div>
     );

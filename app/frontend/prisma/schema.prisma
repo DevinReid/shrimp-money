@@ -116,7 +116,6 @@ model PlaidTransaction {
   merchantName  String?  // Merchant name if available
   amount        Float    // Transaction amount (positive = expense, negative = income)
   date          DateTime // Transaction date
-  category      Json?    // Plaid's category array (from Plaid API)
   userCategory  String?  // User-assigned category (from PlaidTransactionCategory)
   isoCurrencyCode String? // Currency code (e.g., "USD")
   pending       Boolean  @default(false) // Whether transaction is pending

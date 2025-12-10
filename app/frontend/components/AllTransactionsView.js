@@ -194,7 +194,6 @@ export default function AllTransactionsView({ onBulkDialogOpen, onRulesApplied, 
       const query = searchQuery.toLowerCase();
       filtered = transactions.filter(t => 
         t.name?.toLowerCase().includes(query) ||
-        t.category?.some(cat => cat.toLowerCase().includes(query)) ||
         t.userCategory?.toLowerCase().includes(query) ||
         t.merchant_name?.toLowerCase().includes(query)
       );
@@ -442,7 +441,7 @@ export default function AllTransactionsView({ onBulkDialogOpen, onRulesApplied, 
                     {transaction.name}
                   </div>
                   <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                    {transaction.userCategory || (transaction.category?.join(' / ') || 'Uncategorized')}
+                    {transaction.userCategory || 'Uncategorized'}
                   </div>
                 </div>
                 <div style={{ fontSize: '14px', color: '#6b7280' }}>
