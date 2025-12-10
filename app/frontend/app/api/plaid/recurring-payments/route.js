@@ -169,8 +169,27 @@ export async function GET(req) {
     const suggestions = Object.values(merchantGroups)
       .filter(g => g.transactions.length >= 2)
       .map(g => {
-        // Calculate average amount
-        const avgAmount = g.amounts.reduce((a, b) => a + b, 0) / g.amounts.length;
+        // Calculate amount statistics
+        const amounts = g.amounts;
+        const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+        const minAmount = Math.min(...amounts);
+        const maxAmount = Math.max(...amounts);
+        
+        // Calculate standard deviation to determine if amount is variable
+        const variance = amounts.reduce((sum, amt) => {
+          return sum + Math.pow(amt - avgAmount, 2);
+        }, 0) / amounts.length;
+        const stdDev = Math.sqrt(variance);
+        
+        // If std dev > 5% of mean, consider it a variable amount
+        // Subscriptions typically have <1% variance, Bills can have 10-50% variance
+        const variancePercent = avgAmount > 0 ? (stdDev / avgAmount) * 100 : 0;
+        const isVariableAmount = variancePercent > 5;
+        
+        // Category-based hint: Subscriptions default to fixed, Bills default to variable
+        const categoryHint = g.category === 'Subscription' ? false : 
+                            g.category === 'Bill' ? true : 
+                            isVariableAmount;
         
         // Sort by date
         const sorted = g.transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -192,11 +211,34 @@ export async function GET(req) {
         else if (avgInterval >= 85 && avgInterval <= 95) frequency = 'quarterly';
         else if (avgInterval >= 350) frequency = 'yearly';
         
+        // Detect typical day of month for monthly payments
+        let suggestedDayOfMonth = null;
+        if (frequency === 'monthly' && sorted.length >= 2) {
+          const daysOfMonth = sorted.map(t => new Date(t.date).getDate());
+          // Find most common day
+          const dayCount = {};
+          daysOfMonth.forEach(d => {
+            dayCount[d] = (dayCount[d] || 0) + 1;
+          });
+          const mostCommonDay = Object.entries(dayCount)
+            .sort((a, b) => b[1] - a[1])[0];
+          if (mostCommonDay && mostCommonDay[1] >= 2) {
+            suggestedDayOfMonth = parseInt(mostCommonDay[0]);
+          }
+        }
+        
         return {
           merchant: g.merchant,
           category: g.category,
-          suggestedAmount: Math.round(avgAmount * 100) / 100,
+          // For variable amounts, use max for conservative forecasting
+          suggestedAmount: Math.round((categoryHint ? maxAmount : avgAmount) * 100) / 100,
+          amountMin: Math.round(minAmount * 100) / 100,
+          amountMax: Math.round(maxAmount * 100) / 100,
+          amountAvg: Math.round(avgAmount * 100) / 100,
+          isVariableAmount: categoryHint,
+          variancePercent: Math.round(variancePercent * 10) / 10,
           suggestedFrequency: frequency,
+          suggestedDayOfMonth,
           occurrences: g.transactions.length,
           lastDate: sorted[sorted.length - 1].date,
           transactions: sorted.slice(-5).map(t => ({
@@ -235,11 +277,20 @@ export async function GET(req) {
         if (nextDate >= today) {
           const dateKey = nextDate.toISOString().split('T')[0];
           
+          // Use max amount for variable bills (conservative forecasting)
+          const forecastAmount = rp.isVariableAmount && rp.amountMax 
+            ? rp.amountMax 
+            : rp.amount;
+          
           upcomingPayments.push({
             recurringPaymentId: rp.id,
             name: rp.name,
             category: rp.category,
-            amount: rp.amount,
+            amount: forecastAmount,
+            // Include range info for UI tooltips
+            isVariable: rp.isVariableAmount || false,
+            amountMin: rp.amountMin,
+            amountMax: rp.amountMax,
             date: dateKey,
             frequency: rp.frequency,
             isIncome: rp.category === 'Income',
@@ -249,9 +300,9 @@ export async function GET(req) {
             paymentsByDate[dateKey] = { expenses: 0, income: 0 };
           }
           if (rp.category === 'Income') {
-            paymentsByDate[dateKey].income += rp.amount;
+            paymentsByDate[dateKey].income += forecastAmount;
           } else {
-            paymentsByDate[dateKey].expenses += rp.amount;
+            paymentsByDate[dateKey].expenses += forecastAmount;
           }
         }
         
@@ -296,6 +347,9 @@ export async function GET(req) {
       recurringPayments: recurringPayments.map(rp => ({
         ...rp,
         merchantAliases: rp.merchantAliases || [],
+        amountMin: rp.amountMin,
+        amountMax: rp.amountMax,
+        isVariableAmount: rp.isVariableAmount || false,
         startDate: rp.startDate?.toISOString(),
         endDate: rp.endDate?.toISOString(),
         lastPaymentDate: rp.lastPaymentDate?.toISOString(),
@@ -346,6 +400,9 @@ export async function POST(req) {
       merchantName,
       category,
       amount,
+      amountMin,
+      amountMax,
+      isVariableAmount,
       frequency,
       frequencyDays,
       dayOfMonth,
@@ -379,12 +436,20 @@ export async function POST(req) {
       dayOfWeek
     );
 
+    // Determine if variable based on category hint if not explicitly set
+    const isVariable = isVariableAmount !== undefined 
+      ? isVariableAmount 
+      : (category === 'Bill' || category === 'Credit Card');
+
     const recurringPayment = await prisma.plaidRecurringPayment.create({
       data: {
         name,
         merchantName: merchantName || null,
         category,
         amount: parseFloat(amount),
+        amountMin: amountMin ? parseFloat(amountMin) : null,
+        amountMax: amountMax ? parseFloat(amountMax) : null,
+        isVariableAmount: isVariable,
         frequency,
         frequencyDays: frequencyDays ? parseInt(frequencyDays) : null,
         dayOfMonth: dayOfMonth ? parseInt(dayOfMonth) : null,
@@ -402,6 +467,9 @@ export async function POST(req) {
       success: true,
       recurringPayment: {
         ...recurringPayment,
+        amountMin: recurringPayment.amountMin,
+        amountMax: recurringPayment.amountMax,
+        isVariableAmount: recurringPayment.isVariableAmount || false,
         startDate: recurringPayment.startDate?.toISOString(),
         endDate: recurringPayment.endDate?.toISOString(),
         lastPaymentDate: recurringPayment.lastPaymentDate?.toISOString(),

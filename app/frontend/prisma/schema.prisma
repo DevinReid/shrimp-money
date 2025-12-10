@@ -106,6 +106,33 @@ model PlaidTransactionData {
   @@map("plaid_transaction_data")
 }
 
+// Normalized transaction table (extracted from JSON blob)
+model PlaidTransaction {
+  id            String   @id @default(cuid())
+  transactionId String   @unique // Plaid transaction_id (unique identifier)
+  itemId        String   // Plaid item_id (which account)
+  accountId     String   // Plaid account_id
+  name          String   // Transaction name/description
+  merchantName  String?  // Merchant name if available
+  amount        Float    // Transaction amount (positive = expense, negative = income)
+  date          DateTime // Transaction date
+  category      Json?    // Plaid's category array (from Plaid API)
+  userCategory  String?  // User-assigned category (from PlaidTransactionCategory)
+  isoCurrencyCode String? // Currency code (e.g., "USD")
+  pending       Boolean  @default(false) // Whether transaction is pending
+  transactionCode String? // Transaction code
+  rawData       Json?    // Full original transaction data for reference
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([itemId])
+  @@index([accountId])
+  @@index([date])
+  @@index([transactionId])
+  @@index([userCategory])
+  @@map("plaid_transactions")
+}
+
 // Recurring payments configuration
 model PlaidRecurringPayment {
   id              String   @id @default(cuid())
@@ -113,7 +140,10 @@ model PlaidRecurringPayment {
   merchantName    String?  // Original merchant name from transactions
   merchantAliases Json?    // Array of alternate merchant names (e.g., ["Illustrator 2025", "Adobe Illustrator"])
   category        String   // Income, Subscription, Bill, Credit Card, etc.
-  amount          Float    // Expected payment amount
+  amount          Float    // Expected payment amount (for forecasting, uses max if variable)
+  amountMin       Float?   // Lowest observed amount (for variable bills like electricity)
+  amountMax       Float?   // Highest observed amount (for variable bills)
+  isVariableAmount Boolean @default(false) // True if amount varies >5% (Bills vs Subscriptions)
   frequency       String   // weekly, bi-weekly, monthly, quarterly, yearly, custom
   frequencyDays   Int?     // For custom frequency: days between payments
   dayOfMonth      Int?     // For monthly: which day of month (1-31)

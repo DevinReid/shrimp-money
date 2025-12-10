@@ -9,6 +9,8 @@ import RecurringPaymentsView from './RecurringPaymentsView';
 import UncategorizedTransactionsView from './UncategorizedTransactionsView';
 import AllTransactionsView from './AllTransactionsView';
 import VendorRulesView from './VendorRulesView';
+import SpendingForecastView from './SpendingForecastView';
+import SpendingAnalysisView from './SpendingAnalysisView';
 import CategoryDropdown from './CategoryDropdown';
 import AddRuleButton from './AddRuleButton';
 import BulkCategoryDialog from './BulkCategoryDialog';
@@ -644,6 +646,24 @@ export default function PlaidApp() {
                     </button>
                     <button
                       onClick={() => {
+                        setActiveTab('forecast');
+                        setMenuOpen(false);
+                      }}
+                      className={`menu-tab ${activeTab === 'forecast' ? 'active' : ''}`}
+                    >
+                      🔮 Forecast
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTab('spending');
+                        setMenuOpen(false);
+                      }}
+                      className={`menu-tab ${activeTab === 'spending' ? 'active' : ''}`}
+                    >
+                      📊 Spending Analysis
+                    </button>
+                    <button
+                      onClick={() => {
                         setActiveTab('uncategorized');
                         setMenuOpen(false);
                       }}
@@ -810,6 +830,26 @@ export default function PlaidApp() {
                 }}
               >
                 Recurring Payments
+              </button>
+              <button
+                onClick={() => setActiveTab('forecast')}
+                className={`tab-button ${activeTab === 'forecast' ? 'active' : ''}`}
+                style={{
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                🔮 Forecast
+              </button>
+              <button
+                onClick={() => setActiveTab('spending')}
+                className={`tab-button ${activeTab === 'spending' ? 'active' : ''}`}
+                style={{
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                📊 Spending
               </button>
               <button
                 onClick={() => setActiveTab('uncategorized')}
@@ -996,6 +1036,14 @@ export default function PlaidApp() {
 
             {activeTab === 'recurring' && (
               <RecurringPaymentsView />
+            )}
+
+            {activeTab === 'forecast' && (
+              <SpendingForecastView />
+            )}
+
+            {activeTab === 'spending' && (
+              <SpendingAnalysisView />
             )}
 
             {activeTab === 'uncategorized' && (

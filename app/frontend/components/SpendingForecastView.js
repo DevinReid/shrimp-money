@@ -1,0 +1,741 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from './auth/AuthContext';
+
+export default function SpendingForecastView() {
+  const [forecast, setForecast] = useState(null);
+  const [dailyProjections, setDailyProjections] = useState([]);
+  const [criticalDates, setCriticalDates] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [daysToForecast, setDaysToForecast] = useState(30);
+  const [customBalance, setCustomBalance] = useState('');
+  const [showWhatIf, setShowWhatIf] = useState(false);
+  const [hoveredPayment, setHoveredPayment] = useState(null);
+  const { token } = useAuth();
+
+  const fetchForecast = async (startBalance = null) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      let url = `/api/plaid/spending-forecast?days=${daysToForecast}`;
+      if (startBalance) {
+        url += `&startBalance=${startBalance}`;
+      }
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+
+      if (data.success) {
+        setForecast(data.forecast);
+        setDailyProjections(data.dailyProjections || []);
+        setCriticalDates(data.criticalDates || []);
+        setAccounts(data.accounts || []);
+      }
+    } catch (err) {
+      console.error('Error fetching forecast:', err);
+      setError('Failed to fetch spending forecast');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchForecast();
+    }
+  }, [token, daysToForecast]);
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(amount);
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const handleWhatIfApply = () => {
+    if (customBalance) {
+      fetchForecast(parseFloat(customBalance));
+    }
+  };
+
+  const handleWhatIfReset = () => {
+    setCustomBalance('');
+    setShowWhatIf(false);
+    fetchForecast();
+  };
+
+  // Calculate chart data
+  const chartData = useMemo(() => {
+    if (!dailyProjections.length || !forecast) return null;
+
+    const balances = dailyProjections.map(d => d.runningBalance);
+    const maxBalance = Math.max(forecast.startingBalance, ...balances);
+    const minBalance = Math.min(...balances, 0);
+    const range = maxBalance - minBalance || 1;
+
+    return {
+      balances,
+      maxBalance,
+      minBalance,
+      range,
+    };
+  }, [dailyProjections, forecast]);
+
+  // Get days with activity (expenses or income)
+  const activeDays = useMemo(() => {
+    return dailyProjections.filter(d => d.expenses.length > 0 || d.income.length > 0);
+  }, [dailyProjections]);
+
+  if (loading && !forecast) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '24px', marginBottom: '10px' }}>🔮</div>
+        <p style={{ color: '#6b7280' }}>Consulting the shrimp oracle...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>🔮</span> Spending Forecast
+          </h2>
+          <p style={{ margin: '5px 0 0', color: '#6b7280', fontSize: '14px' }}>
+            See into your financial future
+          </p>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <select
+            value={daysToForecast}
+            onChange={(e) => setDaysToForecast(parseInt(e.target.value))}
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '14px',
+              background: 'white',
+            }}
+          >
+            <option value={7}>7 days</option>
+            <option value={14}>14 days</option>
+            <option value={30}>30 days</option>
+            <option value={60}>60 days</option>
+            <option value={90}>90 days</option>
+          </select>
+          
+          <button
+            onClick={() => setShowWhatIf(!showWhatIf)}
+            style={{
+              padding: '8px 16px',
+              background: showWhatIf ? '#667eea' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span>✨</span> What If...?
+          </button>
+          
+          <button
+            onClick={() => fetchForecast()}
+            disabled={loading}
+            style={{
+              padding: '8px 16px',
+              background: loading ? '#9ca3af' : '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}
+          >
+            {loading ? 'Loading...' : '🔄 Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{
+          padding: '12px',
+          background: '#fee2e2',
+          border: '1px solid #fecaca',
+          borderRadius: '6px',
+          color: '#991b1b',
+          marginBottom: '20px',
+        }}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
+      {/* What If Panel */}
+      {showWhatIf && (
+        <div style={{
+          padding: '20px',
+          background: 'linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%)',
+          border: '2px solid #667eea',
+          borderRadius: '12px',
+          marginBottom: '20px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+            <span style={{ fontSize: '24px' }}>🦐</span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#4338ca' }}>
+                What If I Had Different Money?
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#6366f1' }}>
+                Imagine the possibilities! Enter a custom starting balance to see how your forecast changes.
+              </p>
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative' }}>
+              <span style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#6b7280',
+              }}>$</span>
+              <input
+                type="number"
+                value={customBalance}
+                onChange={(e) => setCustomBalance(e.target.value)}
+                placeholder={forecast?.startingBalance?.toFixed(2) || '0.00'}
+                style={{
+                  padding: '10px 12px 10px 24px',
+                  border: '2px solid #667eea',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  width: '180px',
+                  fontWeight: '600',
+                }}
+              />
+            </div>
+            
+            <button
+              onClick={handleWhatIfApply}
+              disabled={!customBalance}
+              style={{
+                padding: '10px 20px',
+                background: customBalance ? '#667eea' : '#d1d5db',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: customBalance ? 'pointer' : 'not-allowed',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+            >
+              ✨ Show Me The Future!
+            </button>
+            
+            <button
+              onClick={handleWhatIfReset}
+              style={{
+                padding: '10px 20px',
+                background: 'white',
+                color: '#667eea',
+                border: '2px solid #667eea',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+              }}
+            >
+              Reset to Reality
+            </button>
+          </div>
+        </div>
+      )}
+
+      {forecast && (
+        <>
+          {/* Summary Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '15px',
+            marginBottom: '30px',
+          }}>
+            <div style={{
+              padding: '20px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: '12px',
+              color: 'white',
+            }}>
+              <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>Starting Balance</div>
+              <div style={{ fontSize: '28px', fontWeight: '700' }}>
+                {formatCurrency(forecast.startingBalance)}
+              </div>
+              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+                {accounts.length} account{accounts.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+            
+            <div style={{
+              padding: '20px',
+              background: forecast.endingBalance >= 0 
+                ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+              borderRadius: '12px',
+              color: 'white',
+            }}>
+              <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>Projected End Balance</div>
+              <div style={{ fontSize: '28px', fontWeight: '700' }}>
+                {formatCurrency(forecast.endingBalance)}
+              </div>
+              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+                After {daysToForecast} days
+              </div>
+            </div>
+            
+            <div style={{
+              padding: '20px',
+              background: forecast.lowestBalance >= 0 
+                ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+                : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              borderRadius: '12px',
+              color: 'white',
+            }}>
+              <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>Lowest Point</div>
+              <div style={{ fontSize: '28px', fontWeight: '700' }}>
+                {formatCurrency(forecast.lowestBalance)}
+              </div>
+              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+                on {formatDate(forecast.lowestBalanceDate)}
+              </div>
+            </div>
+            
+            <div style={{
+              padding: '20px',
+              background: '#f9fafb',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb',
+            }}>
+              <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '5px' }}>Net Change</div>
+              <div style={{ 
+                fontSize: '28px', 
+                fontWeight: '700',
+                color: forecast.netChange >= 0 ? '#10b981' : '#ef4444',
+              }}>
+                {forecast.netChange >= 0 ? '+' : ''}{formatCurrency(forecast.netChange)}
+              </div>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '5px' }}>
+                {formatCurrency(forecast.totalProjectedIncome)} in / {formatCurrency(forecast.totalProjectedExpenses)} out
+              </div>
+            </div>
+          </div>
+
+          {/* Minimum Required Warning */}
+          {forecast.minimumRequired > 0 && (
+            <div style={{
+              padding: '16px 20px',
+              background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
+              border: '2px solid #fecaca',
+              borderRadius: '12px',
+              marginBottom: '25px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '15px',
+            }}>
+              <span style={{ fontSize: '28px' }}>⚠️</span>
+              <div>
+                <div style={{ fontWeight: '600', color: '#991b1b', fontSize: '16px' }}>
+                  Heads Up, Shrimp Friend!
+                </div>
+                <div style={{ color: '#b91c1c', fontSize: '14px', marginTop: '4px' }}>
+                  You'll need at least <strong>{formatCurrency(forecast.minimumRequired)}</strong> more 
+                  to avoid going negative by {formatDate(forecast.lowestBalanceDate)}.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Balance Timeline Chart */}
+          {chartData && dailyProjections.length > 0 && (
+            <div style={{
+              padding: '25px',
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb',
+              marginBottom: '25px',
+            }}>
+              <h3 style={{ margin: '0 0 20px', fontSize: '18px', fontWeight: '600' }}>
+                💰 Balance Timeline
+              </h3>
+              
+              <div style={{ position: 'relative', height: '200px', marginBottom: '10px' }}>
+                {/* Y-axis labels */}
+                <div style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  bottom: 20,
+                  width: '80px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  fontSize: '11px',
+                  color: '#6b7280',
+                  textAlign: 'right',
+                  paddingRight: '10px',
+                }}>
+                  <span>{formatCurrency(chartData.maxBalance)}</span>
+                  <span>{formatCurrency((chartData.maxBalance + chartData.minBalance) / 2)}</span>
+                  <span>{formatCurrency(chartData.minBalance)}</span>
+                </div>
+                
+                {/* Chart area */}
+                <div style={{
+                  position: 'absolute',
+                  left: '85px',
+                  right: 0,
+                  top: 0,
+                  bottom: 20,
+                  background: '#f9fafb',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                }}>
+                  {/* Zero line */}
+                  {chartData.minBalance < 0 && (
+                    <div style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: `${((0 - chartData.minBalance) / chartData.range) * 100}%`,
+                      borderTop: '2px dashed #ef4444',
+                      opacity: 0.5,
+                    }} />
+                  )}
+                  
+                  {/* Balance bars */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    height: '100%',
+                    gap: '1px',
+                    padding: '0 5px',
+                  }}>
+                    {dailyProjections.map((day, idx) => {
+                      const height = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
+                      const isNegative = day.runningBalance < 0;
+                      const hasActivity = day.expenses.length > 0 || day.income.length > 0;
+                      const isCritical = criticalDates.some(c => c.date === day.date);
+                      
+                      return (
+                        <div
+                          key={day.date}
+                          style={{
+                            flex: 1,
+                            height: `${Math.max(height, 2)}%`,
+                            background: isNegative 
+                              ? 'linear-gradient(180deg, #fca5a5 0%, #ef4444 100%)'
+                              : isCritical
+                                ? 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)'
+                                : hasActivity
+                                  ? 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)'
+                                  : 'linear-gradient(180deg, #d1d5db 0%, #9ca3af 100%)',
+                            borderRadius: '2px 2px 0 0',
+                            cursor: 'pointer',
+                            transition: 'opacity 0.2s',
+                            opacity: hasActivity ? 1 : 0.5,
+                          }}
+                          title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}`}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Legend */}
+              <div style={{
+                display: 'flex',
+                gap: '20px',
+                justifyContent: 'center',
+                fontSize: '12px',
+                color: '#6b7280',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '12px', height: '12px', background: '#667eea', borderRadius: '2px' }} />
+                  <span>Activity Day</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '12px', height: '12px', background: '#f59e0b', borderRadius: '2px' }} />
+                  <span>High Expenses</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '12px', height: '12px', background: '#ef4444', borderRadius: '2px' }} />
+                  <span>Negative Balance</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Critical Dates */}
+          {criticalDates.length > 0 && (
+            <div style={{
+              padding: '20px',
+              background: '#fffbeb',
+              border: '1px solid #fcd34d',
+              borderRadius: '12px',
+              marginBottom: '25px',
+            }}>
+              <h3 style={{ margin: '0 0 15px', fontSize: '16px', fontWeight: '600', color: '#92400e' }}>
+                ⚡ Critical Dates to Watch
+              </h3>
+              <div style={{ display: 'grid', gap: '10px' }}>
+                {criticalDates.slice(0, 5).map((cd, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '12px 15px',
+                      background: 'white',
+                      borderRadius: '8px',
+                      border: '1px solid #fde68a',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: '600', color: '#92400e' }}>
+                        {formatDate(cd.date)}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#a16207' }}>
+                        {cd.reason === 'negative_balance' && '⚠️ Balance goes negative!'}
+                        {cd.reason === 'stacked_expenses' && `📦 ${cd.expenseCount} expenses stacked`}
+                        {cd.reason === 'high_expenses' && '💸 High expense day'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: '600', color: '#ef4444' }}>
+                        -{formatCurrency(cd.totalExpenses)}
+                      </div>
+                      <div style={{ 
+                        fontSize: '13px', 
+                        color: cd.projectedBalance < 0 ? '#ef4444' : '#10b981',
+                        fontWeight: '500',
+                      }}>
+                        → {formatCurrency(cd.projectedBalance)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Upcoming Expenses by Day */}
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            border: '1px solid #e5e7eb',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '20px',
+              borderBottom: '1px solid #e5e7eb',
+              background: '#f9fafb',
+            }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
+                📅 Upcoming Payments
+              </h3>
+              <p style={{ margin: '5px 0 0', fontSize: '13px', color: '#6b7280' }}>
+                Expenses and income for the next {daysToForecast} days
+              </p>
+            </div>
+            
+            <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+              {activeDays.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '10px' }}>🦐</div>
+                  <p>No scheduled payments found.</p>
+                  <p style={{ fontSize: '14px' }}>
+                    Add recurring payments to see your forecast here!
+                  </p>
+                </div>
+              ) : (
+                activeDays.map((day, idx) => (
+                  <div
+                    key={day.date}
+                    style={{
+                      borderBottom: idx < activeDays.length - 1 ? '1px solid #f3f4f6' : 'none',
+                    }}
+                  >
+                    {/* Date Header */}
+                    <div style={{
+                      padding: '12px 20px',
+                      background: criticalDates.some(c => c.date === day.date) ? '#fffbeb' : '#f9fafb',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}>
+                      <div style={{ fontWeight: '600', fontSize: '14px' }}>
+                        {formatDate(day.date)}
+                        {criticalDates.some(c => c.date === day.date) && (
+                          <span style={{ marginLeft: '8px' }}>⚡</span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '15px', fontSize: '13px' }}>
+                        {day.totalIncome > 0 && (
+                          <span style={{ color: '#10b981', fontWeight: '600' }}>
+                            +{formatCurrency(day.totalIncome)}
+                          </span>
+                        )}
+                        {day.totalExpenses > 0 && (
+                          <span style={{ color: '#ef4444', fontWeight: '600' }}>
+                            -{formatCurrency(day.totalExpenses)}
+                          </span>
+                        )}
+                        <span style={{ 
+                          color: day.runningBalance >= 0 ? '#667eea' : '#ef4444',
+                          fontWeight: '500',
+                        }}>
+                          → {formatCurrency(day.runningBalance)}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Payments List */}
+                    <div style={{ padding: '10px 20px' }}>
+                      {[...day.income, ...day.expenses].map((payment, pIdx) => (
+                        <div
+                          key={`${payment.id}-${pIdx}`}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '10px 0',
+                            borderBottom: pIdx < day.income.length + day.expenses.length - 1 
+                              ? '1px solid #f3f4f6' 
+                              : 'none',
+                          }}
+                          onMouseEnter={() => payment.isVariable && setHoveredPayment(`${payment.id}-${day.date}`)}
+                          onMouseLeave={() => setHoveredPayment(null)}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '8px',
+                              background: payment.category === 'Income' ? '#dcfce7' : 
+                                         payment.category === 'Subscription' ? '#e0e7ff' :
+                                         payment.category === 'Bill' ? '#fef3c7' : '#fee2e2',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '16px',
+                            }}>
+                              {payment.category === 'Income' && '💵'}
+                              {payment.category === 'Subscription' && '📺'}
+                              {payment.category === 'Bill' && '📄'}
+                              {payment.category === 'Credit Card' && '💳'}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: '500', fontSize: '14px' }}>
+                                {payment.name}
+                                {payment.isVariable && (
+                                  <span 
+                                    style={{ 
+                                      marginLeft: '6px', 
+                                      fontSize: '11px',
+                                      color: '#667eea',
+                                      cursor: 'help',
+                                    }}
+                                    title={`Range: ${formatCurrency(payment.amountMin)} - ${formatCurrency(payment.amountMax)}`}
+                                  >
+                                    📊
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                {payment.category} • {payment.frequency}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div style={{ textAlign: 'right', position: 'relative' }}>
+                            <div style={{
+                              fontWeight: '600',
+                              fontSize: '15px',
+                              color: payment.category === 'Income' ? '#10b981' : '#111827',
+                            }}>
+                              {payment.category === 'Income' ? '+' : '-'}{formatCurrency(payment.amount)}
+                            </div>
+                            
+                            {/* Tooltip for variable amounts */}
+                            {payment.isVariable && hoveredPayment === `${payment.id}-${day.date}` && (
+                              <div style={{
+                                position: 'absolute',
+                                right: 0,
+                                top: '100%',
+                                marginTop: '5px',
+                                padding: '8px 12px',
+                                background: '#1f2937',
+                                color: 'white',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                whiteSpace: 'nowrap',
+                                zIndex: 10,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                              }}>
+                                <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                                  Amount Range
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                  <span>Low: {formatCurrency(payment.amountMin || payment.amount)}</span>
+                                  <span>|</span>
+                                  <span>High: {formatCurrency(payment.amountMax || payment.amount)}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
