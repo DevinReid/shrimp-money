@@ -168,15 +168,19 @@ export async function GET(req) {
       const monthIndex = txDate.getMonth();
       const category = t.userCategory || 'Uncategorized';
       const amount = t.normalizedAmount;
+      const isTransfer = category === 'Transfer';
 
       // Update monthly data
       months[monthIndex].transactionCount++;
       
       if (t.isExpense) {
-        months[monthIndex].totalExpenses += amount;
-        totalYearExpenses += amount;
+        // Exclude transfers from expense totals (they're just moving money between accounts)
+        if (!isTransfer) {
+          months[monthIndex].totalExpenses += amount;
+          totalYearExpenses += amount;
+        }
         
-        // Category tracking
+        // Category tracking (include transfers in category breakdown for visibility)
         if (!months[monthIndex].categories[category]) {
           months[monthIndex].categories[category] = { total: 0, count: 0, transactions: [] };
         }
@@ -190,7 +194,7 @@ export async function GET(req) {
           merchant: t.merchant_name,
         });
 
-        // Year totals by category
+        // Year totals by category (include transfers in category totals for visibility)
         if (!categoryTotals[category]) {
           categoryTotals[category] = { total: 0, count: 0, isExpense: true };
         }
@@ -216,25 +220,28 @@ export async function GET(req) {
         categoryMonthlyData[category][monthIndex].total += amount;
         categoryMonthlyData[category][monthIndex].count++;
 
-        if (category === 'Uncategorized') {
+        if (category === 'Uncategorized' && !isTransfer) {
           uncategorizedTotal += amount;
           uncategorizedCount++;
         }
       } else {
-        months[monthIndex].totalIncome += amount;
-        totalYearIncome += amount;
+        // Exclude transfers from income totals (they're just moving money between accounts)
+        if (!isTransfer) {
+          months[monthIndex].totalIncome += amount;
+          totalYearIncome += amount;
+        }
 
-        // Track income categories too
+        // Track income categories too (include transfers in category breakdown for visibility)
         if (!categoryTotals[category]) {
           categoryTotals[category] = { total: 0, count: 0, isExpense: false };
         }
         // For income, we might want to track it separately
-        if (category === 'Income') {
+        if (category === 'Income' || isTransfer) {
           categoryTotals[category].total += amount;
           categoryTotals[category].count++;
           categoryTotals[category].isExpense = false;
           
-          // Store Income transactions for drill-down view
+          // Store Income/Transfer transactions for drill-down view
           if (!categoryTransactions[category]) {
             categoryTransactions[category] = [];
           }
@@ -246,7 +253,7 @@ export async function GET(req) {
             date: t.date,
           });
           
-          // Monthly breakdown for Income category
+          // Monthly breakdown for Income/Transfer category
           if (!categoryMonthlyData[category]) {
             categoryMonthlyData[category] = Array(12).fill(null).map(() => ({ total: 0, count: 0 }));
           }
@@ -257,8 +264,9 @@ export async function GET(req) {
     });
 
     // Calculate category statistics
+    // Include expenses, Income category, and Transfer category (transfers shown but excluded from totals)
     const categoryStats = Object.entries(categoryTotals)
-      .filter(([cat, data]) => data.isExpense !== false || cat === 'Income')
+      .filter(([cat, data]) => data.isExpense !== false || cat === 'Income' || cat === 'Transfer')
       .map(([category, data]) => {
         const monthlyAmounts = categoryMonthlyData[category] 
           ? categoryMonthlyData[category].map(m => m.total)

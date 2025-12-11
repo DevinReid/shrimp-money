@@ -399,7 +399,7 @@ export default function SpendingAnalysisView() {
               
               <div>
                 {analysis.categoryStats
-                  .filter(cat => cat.isExpense || cat.category === 'Income')
+                  .filter(cat => cat.isExpense || cat.category === 'Income' || cat.category === 'Transfer')
                   .map((cat, idx) => (
                   <div key={cat.category}>
                     {/* Category Row */}
