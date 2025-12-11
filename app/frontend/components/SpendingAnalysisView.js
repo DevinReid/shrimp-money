@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from './auth/AuthContext';
+import CategoryColorPicker from './CategoryColorPicker';
 
-// Category colors for consistent styling
-const CATEGORY_COLORS = {
+// Default category colors (fallback)
+const DEFAULT_CATEGORY_COLORS = {
   'Income': '#10b981',
   'Subscription': '#667eea',
   'Bill': '#f59e0b',
@@ -23,10 +24,6 @@ const CATEGORY_COLORS = {
   'Uncategorized': '#9ca3af',
 };
 
-const getCategoryColor = (category) => {
-  return CATEGORY_COLORS[category] || '#6b7280';
-};
-
 export default function SpendingAnalysisView() {
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -37,7 +34,38 @@ export default function SpendingAnalysisView() {
   const [viewMode, setViewMode] = useState('categories'); // 'categories' or 'monthly'
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [selectedCategoryForTransactions, setSelectedCategoryForTransactions] = useState(null);
+  const [customColors, setCustomColors] = useState({});
+  const [colorPickerOpen, setColorPickerOpen] = useState(null); // category name or null
+  const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 }); // click position
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(null); // month index (0-11) or null for all months
   const { token } = useAuth();
+
+  // Get category color (custom or default)
+  const getCategoryColor = (category) => {
+    return customColors[category] || DEFAULT_CATEGORY_COLORS[category] || '#6b7280';
+  };
+
+  // Lighten a hex color (for selected month bars)
+  const lightenColor = (hex, percent = 30) => {
+    // Remove # if present
+    hex = hex.replace('#', '');
+    
+    // Convert to RGB
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    
+    // Lighten by adding white
+    const lighten = (color) => Math.min(255, Math.round(color + (255 - color) * (percent / 100)));
+    
+    // Convert back to hex
+    const toHex = (n) => {
+      const hex = n.toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    };
+    
+    return `#${toHex(lighten(r))}${toHex(lighten(g))}${toHex(lighten(b))}`;
+  };
 
   const fetchAnalysis = async (year) => {
     try {
@@ -71,9 +99,28 @@ export default function SpendingAnalysisView() {
     }
   };
 
+  // Fetch custom colors
+  const fetchCustomColors = async () => {
+    try {
+      const response = await fetch('/api/plaid/category-colors', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (data.success && data.colors) {
+        setCustomColors(data.colors);
+      }
+    } catch (err) {
+      console.error('Error fetching custom colors:', err);
+    }
+  };
+
   useEffect(() => {
     if (token) {
       fetchAnalysis(selectedYear);
+      fetchCustomColors();
     }
   }, [token, selectedYear]);
 
@@ -278,38 +325,6 @@ export default function SpendingAnalysisView() {
             </div>
           </div>
 
-          {/* Missing Transactions Warning */}
-          {analysis.summary.orphanedCategories > 0 && (
-            <div style={{
-              padding: '16px 20px',
-              background: '#fef2f2',
-              border: '2px solid #fecaca',
-              borderRadius: '12px',
-              marginBottom: '25px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <span style={{ fontSize: '24px' }}>⚠️</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '600', color: '#991b1b', fontSize: '16px', marginBottom: '4px' }}>
-                    Missing Transaction Data
-                  </div>
-                  <div style={{ color: '#b91c1c', fontSize: '14px' }}>
-                    You have <strong>{analysis.summary.orphanedCategories} categorized transactions</strong> that aren't in the database.
-                    These are likely from CSV imports that weren't fully imported. 
-                    Your spending totals may be incomplete.
-                  </div>
-                  {analysis.summary.orphanedCategoriesByType && Object.keys(analysis.summary.orphanedCategoriesByType).length > 0 && (
-                    <div style={{ marginTop: '8px', fontSize: '13px', color: '#991b1b' }}>
-                      Missing by category: {Object.entries(analysis.summary.orphanedCategoriesByType)
-                        .map(([cat, count]) => `${cat} (${count})`)
-                        .join(', ')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Year Data Warning */}
           {analysis.summary.totalTransactions < 50 && (
             <div style={{
@@ -384,12 +399,19 @@ export default function SpendingAnalysisView() {
               
               <div>
                 {analysis.categoryStats
-                  .filter(cat => cat.isExpense && cat.category !== 'Income')
+                  .filter(cat => cat.isExpense || cat.category === 'Income')
                   .map((cat, idx) => (
                   <div key={cat.category}>
                     {/* Category Row */}
                     <div
-                      onClick={() => setExpandedCategory(expandedCategory === cat.category ? null : cat.category)}
+                      onClick={() => {
+                        const newCategory = expandedCategory === cat.category ? null : cat.category;
+                        setExpandedCategory(newCategory);
+                        // Reset month filter when changing categories
+                        if (newCategory !== cat.category) {
+                          setSelectedMonthIndex(null);
+                        }
+                      }}
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '1fr auto auto auto',
@@ -405,21 +427,46 @@ export default function SpendingAnalysisView() {
                       onMouseLeave={(e) => e.currentTarget.style.background = expandedCategory === cat.category ? '#f9fafb' : 'white'}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '10px',
-                          background: getCategoryColor(cat.category),
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'white',
-                          fontSize: '14px',
-                          fontWeight: '700',
-                        }}>
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Get click position relative to viewport
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setColorPickerPosition({
+                              x: rect.left + rect.width / 2, // Center of the color square
+                              y: rect.top + rect.height, // Below the color square
+                            });
+                            setColorPickerOpen(cat.category);
+                          }}
+                          style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '10px',
+                            background: getCategoryColor(cat.category),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'white',
+                            fontSize: '14px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            border: '2px solid transparent',
+                            transition: 'all 0.2s',
+                            position: 'relative',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.border = '2px solid rgba(0, 0, 0, 0.2)';
+                            e.currentTarget.style.transform = 'scale(1.05)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.border = '2px solid transparent';
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                          title="Click to change color"
+                        >
                           {cat.category.charAt(0)}
                         </div>
-                        <div>
+                        <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: '600', fontSize: '15px' }}>{cat.category}</div>
                           <div style={{ fontSize: '12px', color: '#6b7280' }}>
                             {cat.transactionCount} transactions • {cat.monthsActive} months
@@ -446,66 +493,230 @@ export default function SpendingAnalysisView() {
                           {formatCurrency(cat.yearTotal)}
                         </div>
                         <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                          {cat.percentOfTotal}% of total
+                          {cat.percentOfTotal}% of {cat.category === 'Income' ? 'income' : 'total'}
                         </div>
                       </div>
                     </div>
                     
                     {/* Expanded Monthly Breakdown */}
-                    {expandedCategory === cat.category && (
-                      <div style={{
-                        padding: '15px 20px 20px',
-                        background: '#f9fafb',
-                        borderBottom: '1px solid #e5e7eb',
-                      }}>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#6b7280', marginBottom: '12px' }}>
-                          Monthly Breakdown for {cat.category}
-                        </div>
+                    {expandedCategory === cat.category && (() => {
+                      // Filter transactions by selected month
+                      const filteredTransactions = selectedMonthIndex !== null && cat.transactions
+                        ? cat.transactions.filter(txn => {
+                            const txnDate = new Date(txn.date);
+                            return txnDate.getMonth() === selectedMonthIndex;
+                          })
+                        : cat.transactions;
+
+                      return (
                         <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
-                          gap: '8px',
+                          padding: '15px 20px 20px',
+                          background: '#f9fafb',
+                          borderBottom: '1px solid #e5e7eb',
                         }}>
-                          {analysis.monthlySummary.map((month, mIdx) => {
-                            const amount = cat.monthlyBreakdown[mIdx];
-                            const maxAmount = Math.max(...cat.monthlyBreakdown);
-                            const barHeight = maxAmount > 0 ? (amount / maxAmount) * 60 : 0;
-                            
-                            return (
-                              <div key={mIdx} style={{ textAlign: 'center' }}>
-                                <div style={{
-                                  height: '70px',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  justifyContent: 'flex-end',
-                                  alignItems: 'center',
-                                }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: '#6b7280', marginBottom: '12px' }}>
+                            Monthly Breakdown for {cat.category}
+                            {selectedMonthIndex !== null && (
+                              <span style={{ fontSize: '11px', fontWeight: '400', marginLeft: '8px', color: '#9ca3af' }}>
+                                • Filtered to {analysis.monthlySummary[selectedMonthIndex]?.monthName}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(12, 1fr)',
+                            gap: '4px',
+                          }}>
+                            {analysis.monthlySummary.map((month, mIdx) => {
+                              const amount = cat.monthlyBreakdown[mIdx];
+                              const maxAmount = Math.max(...cat.monthlyBreakdown);
+                              const barHeight = maxAmount > 0 ? (amount / maxAmount) * 60 : 0;
+                              const isSelected = selectedMonthIndex === mIdx;
+                              const baseColor = getCategoryColor(cat.category);
+                              const barColor = isSelected 
+                                ? lightenColor(baseColor, 40)
+                                : (amount > 0 ? baseColor : '#e5e7eb');
+                              
+                              return (
+                                <div 
+                                  key={mIdx} 
+                                  style={{ 
+                                    textAlign: 'center',
+                                    cursor: amount > 0 ? 'pointer' : 'default',
+                                  }}
+                                  onClick={() => {
+                                    if (amount > 0) {
+                                      // Toggle: if same month clicked, deselect; otherwise select new month
+                                      setSelectedMonthIndex(isSelected ? null : mIdx);
+                                    }
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (amount > 0) {
+                                      e.currentTarget.style.opacity = '0.8';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.opacity = '1';
+                                  }}
+                                >
                                   <div style={{
-                                    width: '100%',
-                                    maxWidth: '50px',
-                                    height: `${Math.max(barHeight, 4)}px`,
-                                    background: amount > 0 
-                                      ? getCategoryColor(cat.category)
-                                      : '#e5e7eb',
-                                    borderRadius: '4px 4px 0 0',
-                                    opacity: amount > 0 ? 1 : 0.3,
-                                  }} />
+                                    height: '70px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'flex-end',
+                                    alignItems: 'center',
+                                  }}>
+                                    <div style={{
+                                      width: '100%',
+                                      maxWidth: '50px',
+                                      height: `${Math.max(barHeight, 4)}px`,
+                                      background: barColor,
+                                      borderRadius: '4px 4px 0 0',
+                                      opacity: amount > 0 ? 1 : 0.3,
+                                      border: isSelected ? `2px solid ${baseColor}` : 'none',
+                                      boxShadow: isSelected ? `0 0 0 1px ${baseColor}40` : 'none',
+                                      transition: 'all 0.2s',
+                                    }} />
+                                  </div>
+                                  <div style={{ 
+                                    fontSize: '10px', 
+                                    fontWeight: isSelected ? '700' : '600', 
+                                    marginTop: '4px',
+                                    color: isSelected ? baseColor : '#374151',
+                                  }}>
+                                    {month.shortName}
+                                  </div>
+                                  <div style={{ 
+                                    fontSize: '10px', 
+                                    color: amount > 0 ? (isSelected ? baseColor : '#374151') : '#9ca3af',
+                                    fontWeight: isSelected ? '600' : '400',
+                                  }}>
+                                    {amount > 0 ? formatCurrency(amount) : '-'}
+                                  </div>
                                 </div>
-                                <div style={{ fontSize: '11px', fontWeight: '600', marginTop: '4px' }}>
-                                  {month.shortName}
-                                </div>
-                                <div style={{ 
-                                  fontSize: '11px', 
-                                  color: amount > 0 ? '#374151' : '#9ca3af',
-                                }}>
-                                  {amount > 0 ? formatCurrency(amount) : '-'}
+                              );
+                            })}
+                          </div>
+
+                          {/* Transaction List */}
+                          {cat.transactions && cat.transactions.length > 0 && (
+                            <div style={{ marginTop: '20px' }}>
+                              <div style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center',
+                                marginBottom: '12px',
+                              }}>
+                                <div>
+                                  <h4 style={{ 
+                                    margin: 0, 
+                                    fontSize: '15px', 
+                                    fontWeight: '600',
+                                    color: getCategoryColor(cat.category),
+                                  }}>
+                                    {cat.category} Transactions
+                                    {selectedMonthIndex !== null && (
+                                      <span style={{ fontSize: '13px', fontWeight: '400', marginLeft: '8px', color: '#6b7280' }}>
+                                        ({filteredTransactions.length} in {analysis.monthlySummary[selectedMonthIndex]?.monthName})
+                                      </span>
+                                    )}
+                                  </h4>
+                                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                                    {selectedMonthIndex !== null 
+                                      ? `${filteredTransactions.length} transactions in ${analysis.monthlySummary[selectedMonthIndex]?.monthName}`
+                                      : `${cat.totalTransactionCount || cat.transactionCount} transactions • ${formatCurrency(cat.yearTotal)} total`
+                                    }
+                                  </div>
                                 </div>
                               </div>
-                            );
-                          })}
+
+                              {filteredTransactions && filteredTransactions.length > 0 ? (
+                                <div style={{ 
+                                  maxHeight: '400px', 
+                                  overflowY: 'auto',
+                                  background: 'white',
+                                  borderRadius: '8px',
+                                  border: '1px solid #e5e7eb',
+                                }}>
+                                  {filteredTransactions.map((txn, idx) => (
+                                    <div
+                                      key={txn.id}
+                                      style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        padding: '12px 15px',
+                                        borderBottom: idx < filteredTransactions.length - 1 
+                                          ? '1px solid #f3f4f6' 
+                                          : 'none',
+                                      }}
+                                    >
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ 
+                                          fontWeight: '500', 
+                                          fontSize: '14px',
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                        }}>
+                                          {txn.name}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                          {new Date(txn.date).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                          })}
+                                          {txn.merchant && txn.merchant !== txn.name && (
+                                            <span> • {txn.merchant}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div style={{ 
+                                        fontWeight: '600', 
+                                        fontSize: '14px',
+                                        color: '#111827',
+                                        marginLeft: '15px',
+                                      }}>
+                                        {formatCurrencyDetailed(txn.amount)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  
+                                  {cat.hasMoreTransactions && selectedMonthIndex === null && (
+                                    <div style={{ 
+                                      padding: '12px 15px', 
+                                      textAlign: 'center', 
+                                      color: '#6b7280',
+                                      background: '#f9fafb',
+                                      fontSize: '13px',
+                                    }}>
+                                      Showing 100 of {cat.totalTransactionCount} transactions
+                                    </div>
+                                  )}
+                                </div>
+                              ) : selectedMonthIndex !== null ? (
+                                <div style={{ 
+                                  padding: '40px 20px',
+                                  textAlign: 'center',
+                                  background: 'white',
+                                  borderRadius: '8px',
+                                  border: '1px solid #e5e7eb',
+                                  color: '#6b7280',
+                                }}>
+                                  <div style={{ fontSize: '14px' }}>
+                                    No transactions found for {analysis.monthlySummary[selectedMonthIndex]?.monthName}
+                                  </div>
+                                  <div style={{ fontSize: '12px', marginTop: '4px', color: '#9ca3af' }}>
+                                    Click on another month or click the same month again to show all transactions
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -874,6 +1085,22 @@ export default function SpendingAnalysisView() {
             );
           })()}
         </>
+      )}
+
+      {/* Color Picker Modal */}
+      {colorPickerOpen && (
+        <CategoryColorPicker
+          category={colorPickerOpen}
+          currentColor={getCategoryColor(colorPickerOpen)}
+          position={colorPickerPosition}
+          onColorChange={(newColor) => {
+            setCustomColors(prev => ({
+              ...prev,
+              [colorPickerOpen]: newColor,
+            }));
+          }}
+          onClose={() => setColorPickerOpen(null)}
+        />
       )}
     </div>
   );

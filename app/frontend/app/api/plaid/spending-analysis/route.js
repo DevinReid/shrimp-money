@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { requireMFA } from '@/lib/middleware/auth';
-import { readItems } from '@/lib/plaid';
 const prisma = require('@/lib/prisma');
 
 /**
@@ -21,64 +20,48 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const year = parseInt(searchParams.get('year') || new Date().getFullYear());
     
-    // Get all transactions from normalized PlaidTransaction table
-    const itemsData = await readItems();
-    const currentEnv = process.env.PLAID_ENV || 'sandbox';
-    
+    // Get ALL transactions from normalized PlaidTransaction table
+    // No need to filter by itemId - we want to see all spending across all accounts
+    if (!prisma) {
+      throw new Error('Database not available');
+    }
+
     let allTransactions = [];
     
-    if (itemsData.items.length > 0) {
-      const matchingItems = itemsData.items.filter(item => {
-        if (!item.environment) return currentEnv === 'sandbox';
-        return item.environment === currentEnv;
+    try {
+      // Query ALL transactions from the normalized PlaidTransaction table
+      // This gives us a complete view of all spending, regardless of which Plaid item it came from
+      const normalizedTransactions = await prisma.plaidTransaction.findMany({
+        orderBy: { date: 'desc' },
       });
-
-      if (matchingItems.length > 0) {
-        const item = matchingItems.sort((a, b) => 
-          new Date(b.created_at) - new Date(a.created_at)
-        )[0];
-
-        // Use normalized table - this is now our primary source of truth
-        if (!prisma) {
-          throw new Error('Database not available');
-        }
-
-        try {
-          // Query the normalized PlaidTransaction table directly
-          const normalizedTransactions = await prisma.plaidTransaction.findMany({
-            where: { itemId: item.item_id },
-            orderBy: { date: 'desc' },
-          });
-          
-          // Convert normalized format to expected format
-          allTransactions = normalizedTransactions.map(t => ({
-            transaction_id: t.transactionId,
-            account_id: t.accountId,
-            name: t.name,
-            merchant_name: t.merchantName,
-            amount: t.amount,
-            date: t.date.toISOString().split('T')[0],
-            iso_currency_code: t.isoCurrencyCode,
-            pending: t.pending,
-            transaction_code: t.transactionCode,
-            // User category is already in the table - no lookup needed!
-            userCategory: t.userCategory,
-          }));
-          
-          console.log(`✅ Loaded ${allTransactions.length} transactions from normalized PlaidTransaction table`);
-        } catch (dbError) {
-          console.error('❌ Error reading from normalized table:', dbError.message);
-          // Check if it's a model not found error
-          if (dbError.message && (
-            dbError.message.includes('plaidTransaction') || 
-            dbError.message.includes('Unknown model') ||
-            dbError.message.includes('does not exist')
-          )) {
-            throw new Error('PlaidTransaction model not found. The Prisma client may need to be regenerated. Please restart the dev server.');
-          }
-          throw new Error(`Failed to load transactions: ${dbError.message}`);
-        }
+      
+      // Convert normalized format to expected format
+      allTransactions = normalizedTransactions.map(t => ({
+        transaction_id: t.transactionId,
+        account_id: t.accountId,
+        name: t.name,
+        merchant_name: t.merchantName,
+        amount: t.amount,
+        date: t.date.toISOString().split('T')[0],
+        iso_currency_code: t.isoCurrencyCode,
+        pending: t.pending,
+        transaction_code: t.transactionCode,
+        // User category is already in the table - no lookup needed!
+        userCategory: t.userCategory,
+      }));
+      
+      console.log(`✅ Loaded ${allTransactions.length} transactions from normalized PlaidTransaction table`);
+    } catch (dbError) {
+      console.error('❌ Error reading from normalized table:', dbError.message);
+      // Check if it's a model not found error
+      if (dbError.message && (
+        dbError.message.includes('plaidTransaction') || 
+        dbError.message.includes('Unknown model') ||
+        dbError.message.includes('does not exist')
+      )) {
+        throw new Error('PlaidTransaction model not found. The Prisma client may need to be regenerated. Please restart the dev server.');
       }
+      throw new Error(`Failed to load transactions: ${dbError.message}`);
     }
     
     if (allTransactions.length === 0) {
@@ -132,17 +115,26 @@ export async function GET(req) {
       .map(t => {
         // userCategory is already in the transaction data from normalized table
         const userCategory = t.userCategory || null;
-        // Use user's category to determine if it's income
+        // Use user's category to determine if it's income or expense
         // If categorized as "Income", treat as income regardless of amount sign
-        // Otherwise fall back to Plaid convention (positive = expense)
+        // If user has assigned a category (and it's not "Income"), treat as expense regardless of amount sign
+        // Otherwise fall back to Plaid convention (positive = expense, negative = income)
         const isUserMarkedIncome = userCategory === 'Income';
+        const hasUserCategory = userCategory && userCategory !== 'Uncategorized';
+        
+        // If user categorized it, respect their categorization
+        // Income category = always income, any other category = always expense
+        // If no category, use amount sign (positive = expense, negative = income)
+        const isExpense = isUserMarkedIncome 
+          ? false 
+          : (hasUserCategory ? true : t.amount > 0);
+        const isIncome = isUserMarkedIncome || (!hasUserCategory && t.amount < 0);
         
         return {
           ...t,
           userCategory,
-          // Respect user's category assignment for income
-          isExpense: !isUserMarkedIncome && t.amount > 0,
-          isIncome: isUserMarkedIncome || t.amount < 0,
+          isExpense,
+          isIncome,
           normalizedAmount: Math.abs(t.amount),
         };
       });
@@ -241,6 +233,25 @@ export async function GET(req) {
           categoryTotals[category].total += amount;
           categoryTotals[category].count++;
           categoryTotals[category].isExpense = false;
+          
+          // Store Income transactions for drill-down view
+          if (!categoryTransactions[category]) {
+            categoryTransactions[category] = [];
+          }
+          categoryTransactions[category].push({
+            id: t.transaction_id,
+            name: t.name,
+            merchant: t.merchant_name,
+            amount: amount,
+            date: t.date,
+          });
+          
+          // Monthly breakdown for Income category
+          if (!categoryMonthlyData[category]) {
+            categoryMonthlyData[category] = Array(12).fill(null).map(() => ({ total: 0, count: 0 }));
+          }
+          categoryMonthlyData[category][monthIndex].total += amount;
+          categoryMonthlyData[category][monthIndex].count++;
         }
       }
     });
@@ -265,6 +276,11 @@ export async function GET(req) {
         const transactions = (categoryTransactions[category] || [])
           .sort((a, b) => new Date(b.date) - new Date(a.date));
 
+        // For Income category, calculate percent of total income instead of expenses
+        const percentOfTotal = category === 'Income'
+          ? (totalYearIncome > 0 ? Math.round((data.total / totalYearIncome) * 1000) / 10 : 0)
+          : (totalYearExpenses > 0 ? Math.round((data.total / totalYearExpenses) * 1000) / 10 : 0);
+        
         return {
           category,
           yearTotal: Math.round(data.total * 100) / 100,
@@ -273,9 +289,7 @@ export async function GET(req) {
           minMonth: Math.round(minMonth * 100) / 100,
           maxMonth: Math.round(maxMonth * 100) / 100,
           monthlyBreakdown: monthlyAmounts.map(a => Math.round(a * 100) / 100),
-          percentOfTotal: totalYearExpenses > 0 
-            ? Math.round((data.total / totalYearExpenses) * 1000) / 10 
-            : 0,
+          percentOfTotal,
           monthsActive: nonZeroMonths.length,
           isExpense: data.isExpense !== false,
           // Include transactions for drill-down (limit to most recent 100 for performance)
@@ -336,6 +350,16 @@ export async function GET(req) {
       monthlySummary,
       // Include available years for the dropdown
       availableYears: [...new Set(allTransactions.map(t => new Date(t.date).getFullYear()))].sort((a, b) => b - a),
+      // Suggest the year with the most transactions
+      suggestedYear: (() => {
+        const yearCounts = {};
+        allTransactions.forEach(t => {
+          const txYear = new Date(t.date).getFullYear();
+          yearCounts[txYear] = (yearCounts[txYear] || 0) + 1;
+        });
+        return Object.entries(yearCounts)
+          .sort((a, b) => b[1] - a[1])[0]?.[0] || year;
+      })(),
     });
   } catch (error) {
     console.error('Error generating spending analysis:', error);

@@ -67,6 +67,17 @@ model PlaidCustomCategory {
   @@map("plaid_custom_categories")
 }
 
+// Category color preferences
+model PlaidCategoryColor {
+  id        String   @id @default(cuid())
+  category  String   @unique // Category name
+  color     String   // Hex color code (e.g., "#10b981")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("plaid_category_colors")
+}
+
 // Plaid items (access tokens) - shared across all users
 model PlaidItem {
   id          String   @id @default(cuid())
