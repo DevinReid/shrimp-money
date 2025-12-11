@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from './auth/AuthContext';
 
 const RECURRING_CATEGORIES = ['Income', 'Subscription', 'Bill', 'Credit Card'];
@@ -20,11 +20,16 @@ export default function RecurringPaymentsView() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // overview, calendar, manage
+  const [activeTab, setActiveTab] = useState('overview'); // overview, calendar, manage, suggestions, subscriptions, bills, credit-cards
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [linkToExistingModal, setLinkToExistingModal] = useState(null); // Stores suggestion being linked
+  const [categoryTransactions, setCategoryTransactions] = useState({}); // Grouped transactions by category
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [expandedMerchant, setExpandedMerchant] = useState(null); // Which merchant's transactions are expanded
+  const [linkModalPosition, setLinkModalPosition] = useState({ x: 0, y: 0 }); // Position for link modal
+  const [calculatedModalPosition, setCalculatedModalPosition] = useState({ left: 0, top: 0 }); // Calculated position for modal
   const { token } = useAuth();
 
   // Form state
@@ -33,10 +38,15 @@ export default function RecurringPaymentsView() {
     merchantName: '',
     category: 'Bill',
     amount: '',
+    isVariableAmount: false,
+    amountMin: '',
+    amountMax: '',
     frequency: 'monthly',
     frequencyDays: '',
     dayOfMonth: '',
+    dayOfWeek: '',
     startDate: '',
+    endDate: '',
     lastPaymentDate: '',
     notes: '',
   });
@@ -63,6 +73,11 @@ export default function RecurringPaymentsView() {
         setSuggestions(data.suggestions || []);
         setUpcomingPayments(data.upcomingPayments || []);
         setSummary(data.summary || null);
+        
+        // Refresh category transactions if we're on a category tab
+        if (activeTab === 'subscriptions' || activeTab === 'bills' || activeTab === 'credit-cards') {
+          // Will be triggered by useEffect
+        }
       }
     } catch (err) {
       console.error('Error fetching recurring payments:', err);
@@ -72,11 +87,221 @@ export default function RecurringPaymentsView() {
     }
   };
 
+  // Helper function to check if a transaction matches a recurring payment
+  const transactionMatchesPayment = (transaction, payment) => {
+    if (payment.category !== transaction.userCategory) return false;
+    
+    const txMerchant = (transaction.merchant_name || transaction.name || '').toLowerCase();
+    const paymentName = (payment.name || '').toLowerCase();
+    const paymentMerchant = (payment.merchantName || '').toLowerCase();
+    
+    // Check name match
+    if (paymentName && (
+      txMerchant === paymentName ||
+      txMerchant.includes(paymentName) ||
+      paymentName.includes(txMerchant)
+    )) return true;
+    
+    // Check merchant name match
+    if (paymentMerchant && (
+      txMerchant === paymentMerchant ||
+      txMerchant.includes(paymentMerchant) ||
+      paymentMerchant.includes(txMerchant)
+    )) return true;
+    
+    // Check aliases
+    if (payment.merchantAliases && payment.merchantAliases.length > 0) {
+      return payment.merchantAliases.some(alias => {
+        const aliasLower = alias.toLowerCase();
+        return txMerchant === aliasLower ||
+               txMerchant.includes(aliasLower) ||
+               aliasLower.includes(txMerchant);
+      });
+    }
+    
+    return false;
+  };
+
+  // Fetch transactions grouped by category for Subscriptions, Bills, Credit Cards
+  const fetchCategoryTransactions = async () => {
+    try {
+      setLoadingTransactions(true);
+      const response = await fetch('/api/plaid/transactions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.transactions && Array.isArray(data.transactions)) {
+        // Group transactions by category (Subscription, Bill, Credit Card)
+        const grouped = {
+          Subscription: [],
+          Bill: [],
+          'Credit Card': [],
+        };
+
+        data.transactions.forEach(t => {
+          const category = t.userCategory;
+          if (category === 'Subscription' || category === 'Bill' || category === 'Credit Card') {
+            grouped[category].push(t);
+          }
+        });
+
+        // Group by merchant/name within each category
+        const groupedByMerchant = {};
+        // Also create a map of transactions for each configured payment
+        const paymentTransactions = {};
+        
+        ['Subscription', 'Bill', 'Credit Card'].forEach(cat => {
+          const merchantMap = {};
+          grouped[cat].forEach(t => {
+            const key = t.merchant_name || t.name || 'Unknown';
+            if (!merchantMap[key]) {
+              merchantMap[key] = {
+                merchant: key,
+                transactions: [],
+                totalAmount: 0,
+                count: 0,
+                lastDate: null,
+                firstDate: null,
+              };
+            }
+            merchantMap[key].transactions.push(t);
+            merchantMap[key].totalAmount += Math.abs(t.amount);
+            merchantMap[key].count += 1;
+            const txDate = new Date(t.date);
+            if (!merchantMap[key].lastDate || txDate > new Date(merchantMap[key].lastDate)) {
+              merchantMap[key].lastDate = t.date;
+            }
+            if (!merchantMap[key].firstDate || txDate < new Date(merchantMap[key].firstDate)) {
+              merchantMap[key].firstDate = t.date;
+            }
+          });
+          
+          // Check if each merchant is already configured
+          groupedByMerchant[cat] = Object.values(merchantMap)
+            .map(m => {
+              // Find which payment this merchant matches
+              const matchingPayment = recurringPayments.find(rp => {
+                if (rp.category !== cat) return false;
+                // Check if any transaction in this merchant group matches the payment
+                return m.transactions.some(t => transactionMatchesPayment(t, rp));
+              });
+              
+              return {
+                ...m,
+                avgAmount: m.totalAmount / m.count,
+                isConfigured: !!matchingPayment,
+                matchingPaymentId: matchingPayment?.id,
+              };
+            })
+            .sort((a, b) => {
+              // Sort: unconfigured first, then by total amount
+              if (a.isConfigured !== b.isConfigured) {
+                return a.isConfigured ? 1 : -1;
+              }
+              return b.totalAmount - a.totalAmount;
+            });
+          
+          // Also group transactions by configured payment
+          recurringPayments
+            .filter(rp => rp.category === cat)
+            .forEach(payment => {
+              // Find all transactions that match this payment
+              const matchingTransactions = grouped[cat].filter(t => 
+                transactionMatchesPayment(t, payment)
+              );
+              
+              if (matchingTransactions.length > 0) {
+                paymentTransactions[payment.id] = {
+                  payment,
+                  transactions: matchingTransactions.sort((a, b) => 
+                    new Date(b.date) - new Date(a.date)
+                  ),
+                  totalAmount: matchingTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0),
+                  count: matchingTransactions.length,
+                };
+              }
+            });
+        });
+
+        setCategoryTransactions({
+          ...groupedByMerchant,
+          _paymentTransactions: paymentTransactions, // Store separately
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching category transactions:', err);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
   useEffect(() => {
     if (token) {
       fetchRecurringPayments();
     }
   }, [token]);
+
+  useEffect(() => {
+    if (token && (activeTab === 'subscriptions' || activeTab === 'bills' || activeTab === 'credit-cards')) {
+      fetchCategoryTransactions();
+    }
+  }, [token, activeTab, recurringPayments]);
+
+  // Calculate modal position when linkModalPosition changes (similar to CategoryColorPicker)
+  useEffect(() => {
+    if (!linkToExistingModal || typeof window === 'undefined') return;
+    
+    const modalWidth = 500;
+    const modalHeight = 400;
+    const padding = 20;
+    
+    // Position modal right at the button location, like a dropdown
+    let left, top;
+    
+    // Horizontal: position to the side of the button
+    // If button is on right side of screen, show modal to the left
+    // If button is on left side, show modal to the right
+    const isButtonOnRight = linkModalPosition.x > window.innerWidth / 2;
+    
+    if (isButtonOnRight) {
+      left = linkModalPosition.x - modalWidth - 10; // To the left of button
+    } else {
+      left = linkModalPosition.x + 10; // To the right of button
+    }
+    
+    // If it doesn't fit on preferred side, try the other side
+    if (left < padding) {
+      left = linkModalPosition.x + 10;
+    }
+    if (left + modalWidth > window.innerWidth - padding) {
+      left = linkModalPosition.x - modalWidth - 10;
+    }
+    
+    // Final bounds check
+    if (left < padding) {
+      left = padding;
+    }
+    if (left + modalWidth > window.innerWidth - padding) {
+      left = window.innerWidth - modalWidth - padding;
+    }
+    
+    // Vertical: center modal on the button's vertical position
+    top = linkModalPosition.y - modalHeight / 2;
+    
+    // Keep it on screen
+    if (top < padding) {
+      top = padding;
+    }
+    if (top + modalHeight > window.innerHeight - padding) {
+      top = window.innerHeight - modalHeight - padding;
+    }
+    
+    setCalculatedModalPosition({ left, top });
+  }, [linkModalPosition, linkToExistingModal]);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
@@ -115,10 +340,15 @@ export default function RecurringPaymentsView() {
       merchantName: '',
       category: 'Bill',
       amount: '',
+      isVariableAmount: false,
+      amountMin: '',
+      amountMax: '',
       frequency: 'monthly',
       frequencyDays: '',
       dayOfMonth: '',
+      dayOfWeek: '',
       startDate: '',
+      endDate: '',
       lastPaymentDate: '',
       notes: '',
     });
@@ -143,8 +373,12 @@ export default function RecurringPaymentsView() {
         body: JSON.stringify({
           ...formData,
           amount: parseFloat(formData.amount),
+          isVariableAmount: formData.isVariableAmount || false,
+          amountMin: formData.isVariableAmount && formData.amountMin ? parseFloat(formData.amountMin) : null,
+          amountMax: formData.isVariableAmount && formData.amountMax ? parseFloat(formData.amountMax) : null,
           frequencyDays: formData.frequency === 'custom' ? parseInt(formData.frequencyDays) : null,
           dayOfMonth: formData.dayOfMonth ? parseInt(formData.dayOfMonth) : null,
+          dayOfWeek: formData.dayOfWeek ? parseInt(formData.dayOfWeek) : null,
         }),
       });
 
@@ -169,10 +403,15 @@ export default function RecurringPaymentsView() {
       merchantName: payment.merchantName || '',
       category: payment.category || 'Bill',
       amount: payment.amount?.toString() || '',
+      isVariableAmount: payment.isVariableAmount || false,
+      amountMin: payment.amountMin?.toString() || '',
+      amountMax: payment.amountMax?.toString() || '',
       frequency: payment.frequency || 'monthly',
       frequencyDays: payment.frequencyDays?.toString() || '',
       dayOfMonth: payment.dayOfMonth?.toString() || '',
+      dayOfWeek: payment.dayOfWeek?.toString() || '',
       startDate: payment.startDate ? payment.startDate.split('T')[0] : '',
+      endDate: payment.endDate ? payment.endDate.split('T')[0] : '',
       lastPaymentDate: payment.lastPaymentDate ? payment.lastPaymentDate.split('T')[0] : '',
       notes: payment.notes || '',
     });
@@ -421,6 +660,9 @@ export default function RecurringPaymentsView() {
           { id: 'calendar', label: 'Upcoming Calendar' },
           { id: 'manage', label: 'Manage Payments' },
           { id: 'suggestions', label: `Suggestions (${suggestions.length})` },
+          { id: 'subscriptions', label: `📺 Subscriptions`, category: 'Subscription' },
+          { id: 'bills', label: `📄 Bills`, category: 'Bill' },
+          { id: 'credit-cards', label: `💳 Credit Cards`, category: 'Credit Card' },
         ].map(tab => (
           <button
             key={tab.id}
@@ -444,28 +686,42 @@ export default function RecurringPaymentsView() {
       </div>
 
       {/* Link to Existing Payment Modal */}
-      {linkToExistingModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-        }}>
-          <div style={{
-            background: 'white',
-            borderRadius: '12px',
-            padding: '30px',
-            width: '100%',
-            maxWidth: '500px',
-            maxHeight: '80vh',
-            overflowY: 'auto',
-          }}>
+      {linkToExistingModal && (() => {
+        // Filter payments by category if we're linking from a category tab
+        const categoryToMatch = linkToExistingModal.category;
+        const paymentsToShow = categoryToMatch
+          ? recurringPayments.filter(p => p.category === categoryToMatch)
+          : recurringPayments;
+        
+        return (
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.5)',
+              zIndex: 1000,
+            }}
+            onClick={() => setLinkToExistingModal(null)}
+          >
+            <div 
+              style={{
+                position: 'absolute',
+                left: `${calculatedModalPosition.left}px`,
+                top: `${calculatedModalPosition.top}px`,
+                background: 'white',
+                borderRadius: '12px',
+                padding: '30px',
+                width: '500px',
+                maxWidth: '90vw',
+                maxHeight: '80vh',
+                overflowY: 'auto',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
             <h3 style={{ margin: '0 0 10px 0', fontSize: '20px' }}>
               Link to Existing Payment
             </h3>
@@ -484,9 +740,55 @@ export default function RecurringPaymentsView() {
               }}>
                 No existing recurring payments to link to. Create one first!
               </div>
+            ) : paymentsToShow.length === 0 ? (
+              <div style={{
+                padding: '20px',
+                background: '#fef3c7',
+                borderRadius: '8px',
+                textAlign: 'center',
+                color: '#92400e',
+              }}>
+                No existing {categoryToMatch?.toLowerCase()} payments found. 
+                {categoryToMatch && (
+                  <span> You can still link to a payment from another category, or create a new one.</span>
+                )}
+              </div>
             ) : (
               <div style={{ display: 'grid', gap: '10px', marginBottom: '20px' }}>
-                {recurringPayments.map(payment => (
+                {categoryToMatch && paymentsToShow.length < recurringPayments.length && (
+                  <div style={{
+                    padding: '10px',
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    color: '#1e40af',
+                    marginBottom: '10px',
+                  }}>
+                    Showing {categoryToMatch} payments only. 
+                    {recurringPayments.length - paymentsToShow.length > 0 && (
+                      <button
+                        onClick={() => {
+                          // Show all payments by removing category filter
+                          setLinkToExistingModal({ ...linkToExistingModal, category: null });
+                        }}
+                        style={{
+                          marginLeft: '8px',
+                          padding: '2px 8px',
+                          background: '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                        }}
+                      >
+                        Show All Categories
+                      </button>
+                    )}
+                  </div>
+                )}
+                {paymentsToShow.map(payment => (
                   <div
                     key={payment.id}
                     onClick={() => handleLinkToExisting(payment, linkToExistingModal)}
@@ -569,9 +871,10 @@ export default function RecurringPaymentsView() {
                 Cancel
               </button>
             </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Add/Edit Form Modal */}
       {showAddForm && (
@@ -643,49 +946,108 @@ export default function RecurringPaymentsView() {
                 </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
-                    Amount *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    required
-                    placeholder="0.00"
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                    }}
-                  />
-                </div>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  Amount *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  required
+                  placeholder="0.00"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                  }}
+                />
+              </div>
 
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
-                    Frequency *
-                  </label>
-                  <select
-                    value={formData.frequency}
-                    onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                    }}
-                  >
-                    {FREQUENCIES.map(f => (
-                      <option key={f.value} value={f.value}>{f.label}</option>
-                    ))}
-                  </select>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.isVariableAmount}
+                    onChange={(e) => setFormData({ ...formData, isVariableAmount: e.target.checked })}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: '500', fontSize: '14px' }}>
+                    Variable Amount (e.g., electricity bills that change)
+                  </span>
+                </label>
+                <p style={{ margin: '5px 0 0 26px', fontSize: '12px', color: '#6b7280' }}>
+                  If checked, you can set a min and max range. The forecast will use the max amount for safety.
+                </p>
+              </div>
+
+              {formData.isVariableAmount && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                      Minimum Amount
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.amountMin}
+                      onChange={(e) => setFormData({ ...formData, amountMin: e.target.value })}
+                      placeholder="0.00"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                      Maximum Amount *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.amountMax}
+                      onChange={(e) => setFormData({ ...formData, amountMax: e.target.value })}
+                      required={formData.isVariableAmount}
+                      placeholder="0.00"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                      }}
+                    />
+                  </div>
                 </div>
+              )}
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  Frequency *
+                </label>
+                <select
+                  value={formData.frequency}
+                  onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                  }}
+                >
+                  {FREQUENCIES.map(f => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
               </div>
 
               {formData.frequency === 'custom' && (
@@ -720,7 +1082,7 @@ export default function RecurringPaymentsView() {
                     max="31"
                     value={formData.dayOfMonth}
                     onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
-                    placeholder="e.g., 15"
+                    placeholder="e.g., 15 (leave empty for last payment date + 1 month)"
                     style={{
                       width: '100%',
                       padding: '10px',
@@ -729,6 +1091,40 @@ export default function RecurringPaymentsView() {
                       fontSize: '14px',
                     }}
                   />
+                  <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    If set, payment will occur on this day each month. Otherwise, it's calculated from the last payment date.
+                  </p>
+                </div>
+              )}
+
+              {formData.frequency === 'weekly' && (
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                    Day of Week (optional)
+                  </label>
+                  <select
+                    value={formData.dayOfWeek}
+                    onChange={(e) => setFormData({ ...formData, dayOfWeek: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <option value="">Any day (based on last payment)</option>
+                    <option value="0">Sunday</option>
+                    <option value="1">Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3">Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                  </select>
+                  <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    If set, payment will occur on this day each week. Otherwise, it's calculated from the last payment date.
+                  </p>
                 </div>
               )}
 
@@ -749,6 +1145,9 @@ export default function RecurringPaymentsView() {
                       fontSize: '14px',
                     }}
                   />
+                  <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    When this payment first started
+                  </p>
                 </div>
 
                 <div>
@@ -767,7 +1166,31 @@ export default function RecurringPaymentsView() {
                       fontSize: '14px',
                     }}
                   />
+                  <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    Used to calculate next payment date
+                  </p>
                 </div>
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  End Date (optional)
+                </label>
+                <input
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                  }}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                  If set, this payment will stop recurring after this date (e.g., for temporary subscriptions)
+                </p>
               </div>
 
               <div style={{ marginBottom: '20px' }}>
@@ -989,10 +1412,20 @@ export default function RecurringPaymentsView() {
                         color: payment.category === 'Income' ? '#10b981' : '#111827',
                       }}>
                         {payment.category === 'Income' ? '+' : ''}{formatCurrency(payment.amount)}
+                        {payment.isVariableAmount && payment.amountMax && (
+                          <span style={{ fontSize: '14px', color: '#6b7280', marginLeft: '8px' }}>
+                            (up to {formatCurrency(payment.amountMax)})
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
                         Next: {formatDate(payment.nextPaymentDate)}
                       </div>
+                      {payment.isVariableAmount && payment.amountMin && payment.amountMax && (
+                        <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>
+                          Range: {formatCurrency(payment.amountMin)} - {formatCurrency(payment.amountMax)}
+                        </div>
+                      )}
                     </div>
                   </div>
                   
@@ -1374,7 +1807,14 @@ export default function RecurringPaymentsView() {
                       </button>
                       {recurringPayments.length > 0 && (
                         <button
-                          onClick={() => setLinkToExistingModal(suggestion)}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setLinkModalPosition({
+                              x: rect.left + rect.width / 2,
+                              y: rect.top + rect.height / 2, // Center of the button
+                            });
+                            setLinkToExistingModal(suggestion);
+                          }}
                           style={{
                             padding: '8px 16px',
                             background: '#667eea',
@@ -1398,6 +1838,401 @@ export default function RecurringPaymentsView() {
           )}
         </div>
       )}
+
+      {/* Category Tabs: Subscriptions, Bills, Credit Cards */}
+      {(activeTab === 'subscriptions' || activeTab === 'bills' || activeTab === 'credit-cards') && (() => {
+        const categoryMap = {
+          'subscriptions': 'Subscription',
+          'bills': 'Bill',
+          'credit-cards': 'Credit Card',
+        };
+        const currentCategory = categoryMap[activeTab];
+        const configuredPayments = recurringPayments.filter(rp => rp.category === currentCategory);
+        const transactions = categoryTransactions[currentCategory] || [];
+        const unconfiguredTransactions = transactions.filter(t => !t.isConfigured);
+        const paymentTransactions = categoryTransactions._paymentTransactions || {};
+
+        return (
+          <div>
+            <div style={{
+              padding: '15px',
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              fontSize: '14px',
+              color: '#1e40af',
+            }}>
+              <strong>💡 {currentCategory} Management:</strong> Configure recurring payments for {currentCategory.toLowerCase()}. 
+              See what's already configured and what needs to be added from your transaction history.
+            </div>
+
+            {/* Configured Payments */}
+            <div style={{ marginBottom: '30px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span>✅</span> Configured {currentCategory}s ({configuredPayments.length})
+              </h3>
+              {configuredPayments.length === 0 ? (
+                <div style={{
+                  padding: '30px',
+                  background: '#f9fafb',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb',
+                  textAlign: 'center',
+                  color: '#6b7280',
+                }}>
+                  No {currentCategory.toLowerCase()} payments configured yet.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: '15px' }}>
+                  {configuredPayments.map(payment => {
+                    const paymentTxns = paymentTransactions[payment.id];
+                    const isExpanded = expandedMerchant === `payment-${payment.id}`;
+                    
+                    return (
+                      <div
+                        key={payment.id}
+                        style={{
+                          padding: '20px',
+                          background: 'white',
+                          borderRadius: '8px',
+                          border: '2px solid #10b981',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '8px' }}>
+                              {payment.name}
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
+                              <span style={{
+                                padding: '3px 8px',
+                                background: getCategoryColor(payment.category) + '20',
+                                color: getCategoryColor(payment.category),
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: '500',
+                              }}>
+                                {payment.category}
+                              </span>
+                              <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                                {formatCurrency(payment.amount)} / {getFrequencyLabel(payment.frequency)}
+                              </span>
+                              {payment.isVariableAmount && payment.amountMax && (
+                                <span style={{ fontSize: '12px', color: '#9ca3af' }}>
+                                  (up to {formatCurrency(payment.amountMax)})
+                                </span>
+                              )}
+                              {paymentTxns && (
+                                <span style={{ fontSize: '12px', color: '#667eea', fontWeight: '500' }}>
+                                  {paymentTxns.count} transaction{paymentTxns.count !== 1 ? 's' : ''} linked
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                              Next: {formatDate(payment.nextPaymentDate)}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+                            {paymentTxns && paymentTxns.transactions.length > 0 && (
+                              <button
+                                onClick={() => setExpandedMerchant(isExpanded ? null : `payment-${payment.id}`)}
+                                style={{
+                                  padding: '6px 12px',
+                                  background: '#f3f4f6',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                  color: '#374151',
+                                }}
+                              >
+                                {isExpanded ? 'Hide' : 'Show'} Transactions ({paymentTxns.count})
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleEdit(payment)}
+                              style={{
+                                padding: '6px 12px',
+                                background: '#f3f4f6',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                              }}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Show linked transactions */}
+                        {isExpanded && paymentTxns && paymentTxns.transactions.length > 0 && (
+                          <div style={{
+                            marginTop: '15px',
+                            padding: '15px',
+                            background: '#f9fafb',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                          }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '10px', color: '#6b7280' }}>
+                              Linked Transactions ({paymentTxns.count})
+                            </div>
+                            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                              {paymentTxns.transactions.map((tx, txIdx) => (
+                                <div
+                                  key={tx.transaction_id || txIdx}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '10px',
+                                    borderBottom: txIdx < paymentTxns.transactions.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontSize: '14px', fontWeight: '500' }}>
+                                      {tx.name}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                      {formatDate(tx.date)}
+                                      {tx.merchant_name && tx.merchant_name !== tx.name && (
+                                        <span> • {tx.merchant_name}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                                    {formatCurrency(Math.abs(tx.amount))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Unconfigured Transactions */}
+            <div>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span>📋</span> Transactions to Configure ({unconfiguredTransactions.length})
+              </h3>
+              {loadingTransactions ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                  Loading transactions...
+                </div>
+              ) : unconfiguredTransactions.length === 0 ? (
+                <div style={{
+                  padding: '30px',
+                  background: '#f0fdf4',
+                  borderRadius: '8px',
+                  border: '1px solid #bbf7d0',
+                  textAlign: 'center',
+                  color: '#166534',
+                }}>
+                  🎉 All {currentCategory.toLowerCase()} transactions are configured!
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: '15px' }}>
+                  {unconfiguredTransactions.map((merchantGroup, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '20px',
+                        background: 'white',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '8px' }}>
+                            {merchantGroup.merchant}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
+                            <span style={{
+                              padding: '3px 8px',
+                              background: getCategoryColor(currentCategory) + '20',
+                              color: getCategoryColor(currentCategory),
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                            }}>
+                              {currentCategory}
+                            </span>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                              {merchantGroup.count} transactions
+                            </span>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                              Total: {formatCurrency(merchantGroup.totalAmount)}
+                            </span>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                              Avg: {formatCurrency(merchantGroup.avgAmount)}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                            {formatDate(merchantGroup.firstDate)} - {formatDate(merchantGroup.lastDate)}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+                          <button
+                            onClick={() => {
+                              // Calculate suggested frequency
+                              const daysBetween = (new Date(merchantGroup.lastDate) - new Date(merchantGroup.firstDate)) / (1000 * 60 * 60 * 24);
+                              const avgDays = daysBetween / (merchantGroup.count - 1);
+                              let suggestedFreq = 'monthly';
+                              if (avgDays <= 10) suggestedFreq = 'weekly';
+                              else if (avgDays <= 20) suggestedFreq = 'bi-weekly';
+                              else if (avgDays <= 45) suggestedFreq = 'monthly';
+                              else if (avgDays <= 100) suggestedFreq = 'quarterly';
+                              else suggestedFreq = 'yearly';
+
+                              setFormData({
+                                name: merchantGroup.merchant,
+                                merchantName: merchantGroup.merchant,
+                                category: currentCategory,
+                                amount: merchantGroup.avgAmount.toFixed(2),
+                                isVariableAmount: false,
+                                amountMin: '',
+                                amountMax: '',
+                                frequency: suggestedFreq,
+                                frequencyDays: '',
+                                dayOfMonth: '',
+                                dayOfWeek: '',
+                                startDate: merchantGroup.firstDate.split('T')[0],
+                                endDate: '',
+                                lastPaymentDate: merchantGroup.lastDate.split('T')[0],
+                                notes: `Auto-detected from ${merchantGroup.count} transactions`,
+                              });
+                              setShowAddForm(true);
+                            }}
+                            style={{
+                              padding: '8px 16px',
+                              background: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            + Add as Recurring
+                          </button>
+                          {recurringPayments.length > 0 && (
+                            <button
+                              onClick={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setLinkModalPosition({
+                                  x: rect.left + rect.width / 2,
+                                  y: rect.top + rect.height / 2, // Center of the button
+                                });
+                                setLinkToExistingModal({
+                                  merchant: merchantGroup.merchant,
+                                  category: currentCategory,
+                                  suggestedAmount: merchantGroup.avgAmount,
+                                  suggestedFrequency: (() => {
+                                    const daysBetween = (new Date(merchantGroup.lastDate) - new Date(merchantGroup.firstDate)) / (1000 * 60 * 60 * 24);
+                                    const avgDays = daysBetween / (merchantGroup.count - 1);
+                                    if (avgDays <= 10) return 'weekly';
+                                    else if (avgDays <= 20) return 'bi-weekly';
+                                    else if (avgDays <= 45) return 'monthly';
+                                    else if (avgDays <= 100) return 'quarterly';
+                                    else return 'yearly';
+                                  })(),
+                                  occurrences: merchantGroup.count,
+                                  lastDate: merchantGroup.lastDate,
+                                });
+                              }}
+                              style={{
+                                padding: '8px 16px',
+                                background: '#667eea',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '500',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              🔗 Link to Existing
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setExpandedMerchant(expandedMerchant === merchantGroup.merchant ? null : merchantGroup.merchant)}
+                            style={{
+                              padding: '6px 12px',
+                              background: '#f3f4f6',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              color: '#374151',
+                            }}
+                          >
+                            {expandedMerchant === merchantGroup.merchant ? 'Hide' : 'Show'} Transactions
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expanded Transaction List */}
+                      {expandedMerchant === merchantGroup.merchant && (
+                        <div style={{
+                          marginTop: '15px',
+                          padding: '15px',
+                          background: '#f9fafb',
+                          borderRadius: '8px',
+                          border: '1px solid #e5e7eb',
+                        }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '10px', color: '#6b7280' }}>
+                            Transactions ({merchantGroup.transactions.length})
+                          </div>
+                          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                            {merchantGroup.transactions
+                              .sort((a, b) => new Date(b.date) - new Date(a.date))
+                              .map((tx, txIdx) => (
+                                <div
+                                  key={tx.transaction_id || txIdx}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '10px',
+                                    borderBottom: txIdx < merchantGroup.transactions.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontSize: '14px', fontWeight: '500' }}>
+                                      {tx.name}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                      {formatDate(tx.date)}
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                                    {formatCurrency(Math.abs(tx.amount))}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

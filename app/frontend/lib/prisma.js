@@ -9,8 +9,15 @@ let prisma = null;
 
 if (process.env.DATABASE_URL) {
   try {
+    // In development, clear cached instance on hot reload to pick up config changes
+    if (process.env.NODE_ENV === 'development' && globalForPrisma.prisma) {
+      // Disconnect old instance (fire and forget) and clear cache
+      globalForPrisma.prisma.$disconnect().catch(() => {});
+      globalForPrisma.prisma = null;
+    }
+    
     prisma = globalForPrisma.prisma || new PrismaClient({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+      log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
     });
     
     if (process.env.NODE_ENV !== 'production') {

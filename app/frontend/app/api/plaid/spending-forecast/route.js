@@ -40,6 +40,135 @@ function calculateNextPaymentDate(lastPaymentDate, frequency, frequencyDays, day
 }
 
 /**
+ * Apply 2-day buffer to account for Plaid posted dates vs actual withdrawal dates
+ * If payment is scheduled for Jan 2, we need money by Dec 31 (2 days earlier)
+ */
+function applyBufferDate(paymentDate) {
+  const buffered = new Date(paymentDate);
+  buffered.setDate(buffered.getDate() - 2);
+  return buffered;
+}
+
+/**
+ * Analyze transaction patterns from spending analysis data
+ * Returns patterns like: monthly bills, weekly expenses, etc.
+ * Separates income and expense patterns
+ */
+function analyzeTransactionPatterns(transactions, startDate, endDate) {
+  const patterns = {
+    income: {
+      monthly: {}, // category -> { amount, dayOfMonth, count }
+      weekly: {},  // category -> { amount, dayOfWeek, count }
+      daily: {},   // category -> { avgAmount, count }
+    },
+    expenses: {
+      monthly: {}, // category -> { amount, dayOfMonth, count }
+      weekly: {},  // category -> { amount, dayOfWeek, count }
+      daily: {},   // category -> { avgAmount, count }
+    },
+  };
+
+  // Group transactions by category and analyze frequency
+  const incomeCategoryData = {};
+  const expenseCategoryData = {};
+  
+  transactions.forEach(t => {
+    if (!t.userCategory || t.userCategory === 'Uncategorized' || t.userCategory === 'Transfer') {
+      return;
+    }
+    
+    const category = t.userCategory;
+    const txDate = new Date(t.date);
+    const amount = Math.abs(t.amount);
+    const isIncome = t.isIncome || category === 'Income';
+    
+    const categoryData = isIncome ? incomeCategoryData : expenseCategoryData;
+    
+    if (!categoryData[category]) {
+      categoryData[category] = [];
+    }
+    
+    categoryData[category].push({
+      date: txDate,
+      amount: amount,
+      dayOfMonth: txDate.getDate(),
+      dayOfWeek: txDate.getDay(),
+    });
+  });
+
+  // Helper function to analyze patterns for a set of category data
+  const analyzeCategoryPatterns = (categoryData, patternType) => {
+    Object.entries(categoryData).forEach(([category, txs]) => {
+      if (txs.length < 2) return; // Need at least 2 transactions to detect pattern
+      
+      // Check for monthly pattern (same day of month, roughly monthly intervals)
+      const monthlyDays = txs.map(t => t.dayOfMonth);
+      const monthlyCounts = {};
+      monthlyDays.forEach(day => {
+        monthlyCounts[day] = (monthlyCounts[day] || 0) + 1;
+      });
+      
+      const mostCommonDay = Object.entries(monthlyCounts)
+        .sort((a, b) => b[1] - a[1])[0];
+      
+      if (mostCommonDay && mostCommonDay[1] >= 2) {
+        // Likely monthly pattern
+        const avgAmount = txs.reduce((sum, t) => sum + t.amount, 0) / txs.length;
+        patterns[patternType].monthly[category] = {
+          amount: avgAmount,
+          dayOfMonth: parseInt(mostCommonDay[0]),
+          count: txs.length,
+          maxAmount: Math.max(...txs.map(t => t.amount)),
+        };
+      }
+      
+      // Check for weekly pattern (same day of week)
+      const weeklyDays = txs.map(t => t.dayOfWeek);
+      const weeklyCounts = {};
+      weeklyDays.forEach(day => {
+        weeklyCounts[day] = (weeklyCounts[day] || 0) + 1;
+      });
+      
+      const mostCommonWeekDay = Object.entries(weeklyCounts)
+        .sort((a, b) => b[1] - a[1])[0];
+      
+      if (mostCommonWeekDay && mostCommonWeekDay[1] >= 2 && !patterns[patternType].monthly[category]) {
+        // Likely weekly pattern (only if not already monthly)
+        const avgAmount = txs.reduce((sum, t) => sum + t.amount, 0) / txs.length;
+        patterns[patternType].weekly[category] = {
+          amount: avgAmount,
+          dayOfWeek: parseInt(mostCommonWeekDay[0]),
+          count: txs.length,
+          maxAmount: Math.max(...txs.map(t => t.amount)),
+        };
+      }
+      
+      // Daily average for categories without clear pattern
+      if (!patterns[patternType].monthly[category] && !patterns[patternType].weekly[category]) {
+        const avgAmount = txs.reduce((sum, t) => sum + t.amount, 0) / txs.length;
+        const daysBetween = (txs[txs.length - 1].date - txs[0].date) / (1000 * 60 * 60 * 24);
+        const frequency = daysBetween / txs.length;
+        
+        patterns[patternType].daily[category] = {
+          avgAmount: avgAmount,
+          count: txs.length,
+          frequency: frequency, // days between transactions
+          maxAmount: Math.max(...txs.map(t => t.amount)),
+        };
+      }
+    });
+  };
+
+  // Analyze income patterns
+  analyzeCategoryPatterns(incomeCategoryData, 'income');
+  
+  // Analyze expense patterns
+  analyzeCategoryPatterns(expenseCategoryData, 'expenses');
+
+  return patterns;
+}
+
+/**
  * GET /api/plaid/spending-forecast
  * Generate spending forecast with cash flow projections
  */
@@ -127,12 +256,65 @@ export async function GET(req) {
       });
     }
 
+    // Load actual transactions from spending analysis (PlaidTransaction table)
+    let allTransactions = [];
+    if (prisma && prisma.plaidTransaction) {
+      try {
+        // Get transactions from the last 6 months to analyze patterns
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        
+        const normalizedTransactions = await prisma.plaidTransaction.findMany({
+          where: {
+            date: {
+              gte: sixMonthsAgo,
+            },
+          },
+          orderBy: { date: 'desc' },
+        });
+        
+        allTransactions = normalizedTransactions.map(t => {
+          // Identify income vs expenses (same logic as spending analysis)
+          const userCategory = t.userCategory || null;
+          const isUserMarkedIncome = userCategory === 'Income';
+          const hasUserCategory = userCategory && userCategory !== 'Uncategorized';
+          
+          // If user categorized it, respect their categorization
+          // Income category = always income, any other category = always expense
+          // If no category, use amount sign (positive = expense, negative = income in Plaid)
+          const isExpense = isUserMarkedIncome 
+            ? false 
+            : (hasUserCategory ? true : t.amount > 0);
+          const isIncome = isUserMarkedIncome || (!hasUserCategory && t.amount < 0);
+          
+          return {
+            transaction_id: t.transactionId,
+            account_id: t.accountId,
+            name: t.name,
+            merchant_name: t.merchantName,
+            amount: t.amount,
+            date: t.date.toISOString().split('T')[0],
+            userCategory: t.userCategory,
+            isExpense,
+            isIncome,
+          };
+        });
+        
+        console.log(`✅ Loaded ${allTransactions.length} transactions for pattern analysis`);
+      } catch (txError) {
+        console.log('⚠️ Could not load transactions for pattern analysis:', txError.message);
+      }
+    }
+
     // Build daily projections for the forecast period
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
     const endDate = new Date(today);
     endDate.setDate(endDate.getDate() + daysToForecast);
+    
+    // Analyze transaction patterns from spending analysis
+    const transactionPatterns = analyzeTransactionPatterns(allTransactions, today, endDate);
 
     // Initialize daily projections map
     const dailyData = {};
@@ -150,6 +332,7 @@ export async function GET(req) {
     }
 
     // Generate all upcoming payments for each recurring payment
+    // Apply 2-day buffer: if payment is Jan 2, we need money by Dec 31
     recurringPayments.forEach(rp => {
       let nextDate = rp.nextPaymentDate ? new Date(rp.nextPaymentDate) : null;
       
@@ -172,9 +355,12 @@ export async function GET(req) {
       // Generate payments within the forecast window
       while (nextDate <= endDate) {
         if (nextDate >= today) {
-          const dateKey = nextDate.toISOString().split('T')[0];
+          // Apply 2-day buffer: subtract 2 days from payment date for "need money by" date
+          const bufferedDate = applyBufferDate(nextDate);
+          const dateKey = bufferedDate.toISOString().split('T')[0];
           
-          if (dailyData[dateKey]) {
+          // Only add if buffered date is still within forecast window
+          if (dailyData[dateKey] && bufferedDate >= today) {
             // Use max amount for conservative forecasting (as per plan)
             // For variable bills, we use amountMax; for fixed subscriptions, use amount
             const forecastAmount = rp.isVariableAmount && rp.amountMax 
@@ -191,6 +377,8 @@ export async function GET(req) {
               amountMin: rp.amountMin,
               amountMax: rp.amountMax,
               frequency: rp.frequency,
+              originalDate: nextDate.toISOString().split('T')[0], // Store original date for reference
+              bufferedDate: dateKey, // Date when money is actually needed
             };
             
             if (rp.category === 'Income') {
@@ -211,6 +399,143 @@ export async function GET(req) {
           rp.dayOfMonth,
           rp.dayOfWeek
         );
+      }
+    });
+
+    // Add transaction-based patterns from spending analysis
+    // These supplement recurring payments with actual historical patterns
+    
+    // Helper function to add income patterns
+    const addIncomePattern = (dateKey, testDate, category, pattern, frequency) => {
+      if (dailyData[dateKey] && new Date(dateKey) >= today) {
+        const forecastAmount = pattern.maxAmount || pattern.amount;
+        
+        const paymentEntry = {
+          id: `pattern-${category}-${testDate.toISOString().split('T')[0]}`,
+          name: `${category} (from pattern)`,
+          category: category,
+          amount: forecastAmount,
+          isVariable: pattern.maxAmount > pattern.amount,
+          amountMin: pattern.amount,
+          amountMax: pattern.maxAmount || pattern.amount,
+          frequency: frequency,
+          originalDate: testDate.toISOString().split('T')[0],
+          bufferedDate: dateKey,
+          source: 'transaction-pattern',
+        };
+        
+        dailyData[dateKey].income.push(paymentEntry);
+        dailyData[dateKey].totalIncome += forecastAmount;
+      }
+    };
+    
+    // Helper function to add expense patterns
+    const addExpensePattern = (dateKey, testDate, category, pattern, frequency) => {
+      if (dailyData[dateKey] && new Date(dateKey) >= today) {
+        const forecastAmount = pattern.maxAmount || pattern.amount;
+        
+        const paymentEntry = {
+          id: `pattern-${category}-${testDate.toISOString().split('T')[0]}`,
+          name: `${category} (from pattern)`,
+          category: category,
+          amount: forecastAmount,
+          isVariable: pattern.maxAmount > pattern.amount,
+          amountMin: pattern.amount,
+          amountMax: pattern.maxAmount || pattern.amount,
+          frequency: frequency,
+          originalDate: testDate.toISOString().split('T')[0],
+          bufferedDate: dateKey,
+          source: 'transaction-pattern',
+        };
+        
+        dailyData[dateKey].expenses.push(paymentEntry);
+        dailyData[dateKey].totalExpenses += forecastAmount;
+      }
+    };
+    
+    // Monthly income patterns (e.g., salary)
+    Object.entries(transactionPatterns.income.monthly).forEach(([category, pattern]) => {
+      const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
+      
+      if (!hasRecurringPayment && pattern.count >= 2) {
+        let currentDate = new Date(today);
+        
+        while (currentDate <= endDate) {
+          const dayOfMonth = pattern.dayOfMonth;
+          const testDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOfMonth);
+          
+          if (testDate >= today && testDate <= endDate) {
+            const bufferedDate = applyBufferDate(testDate);
+            const dateKey = bufferedDate.toISOString().split('T')[0];
+            addIncomePattern(dateKey, testDate, category, pattern, 'monthly');
+          }
+          
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+      }
+    });
+    
+    // Weekly income patterns
+    Object.entries(transactionPatterns.income.weekly).forEach(([category, pattern]) => {
+      const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
+      
+      if (!hasRecurringPayment && pattern.count >= 2) {
+        let testDate = new Date(today);
+        const daysUntilTarget = (pattern.dayOfWeek - testDate.getDay() + 7) % 7;
+        testDate.setDate(testDate.getDate() + (daysUntilTarget === 0 ? 7 : daysUntilTarget));
+        
+        while (testDate <= endDate) {
+          if (testDate >= today) {
+            const bufferedDate = applyBufferDate(testDate);
+            const dateKey = bufferedDate.toISOString().split('T')[0];
+            addIncomePattern(dateKey, testDate, category, pattern, 'weekly');
+          }
+          
+          testDate.setDate(testDate.getDate() + 7);
+        }
+      }
+    });
+    
+    // Monthly expense patterns (e.g., bills that come on the same day each month)
+    Object.entries(transactionPatterns.expenses.monthly).forEach(([category, pattern]) => {
+      const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
+      
+      if (!hasRecurringPayment && pattern.count >= 2) {
+        let currentDate = new Date(today);
+        
+        while (currentDate <= endDate) {
+          const dayOfMonth = pattern.dayOfMonth;
+          const testDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOfMonth);
+          
+          if (testDate >= today && testDate <= endDate) {
+            const bufferedDate = applyBufferDate(testDate);
+            const dateKey = bufferedDate.toISOString().split('T')[0];
+            addExpensePattern(dateKey, testDate, category, pattern, 'monthly');
+          }
+          
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+      }
+    });
+    
+    // Weekly expense patterns (e.g., weekly subscriptions)
+    Object.entries(transactionPatterns.expenses.weekly).forEach(([category, pattern]) => {
+      const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
+      
+      if (!hasRecurringPayment && pattern.count >= 2) {
+        let testDate = new Date(today);
+        const daysUntilTarget = (pattern.dayOfWeek - testDate.getDay() + 7) % 7;
+        testDate.setDate(testDate.getDate() + (daysUntilTarget === 0 ? 7 : daysUntilTarget));
+        
+        while (testDate <= endDate) {
+          if (testDate >= today) {
+            const bufferedDate = applyBufferDate(testDate);
+            const dateKey = bufferedDate.toISOString().split('T')[0];
+            addExpensePattern(dateKey, testDate, category, pattern, 'weekly');
+          }
+          
+          testDate.setDate(testDate.getDate() + 7);
+        }
       }
     });
 
@@ -287,6 +612,16 @@ export async function GET(req) {
         current: a.balances.current,
       })),
       recurringPaymentsCount: recurringPayments.length,
+      metadata: {
+        bufferDays: 2,
+        note: 'All payment dates include a 2-day buffer. If a payment posts on Jan 2, you need the money by Dec 31.',
+        dataSources: {
+          recurringPayments: recurringPayments.length,
+          incomePatterns: Object.keys(transactionPatterns.income.monthly).length + Object.keys(transactionPatterns.income.weekly).length,
+          expensePatterns: Object.keys(transactionPatterns.expenses.monthly).length + Object.keys(transactionPatterns.expenses.weekly).length,
+          transactionsAnalyzed: allTransactions.length,
+        },
+      },
     });
   } catch (error) {
     console.error('Error generating spending forecast:', error);
