@@ -16,6 +16,7 @@ const FREQUENCIES = [
 export default function RecurringPaymentsView() {
   const [recurringPayments, setRecurringPayments] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState([]);
   const [upcomingPayments, setUpcomingPayments] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -71,6 +72,7 @@ export default function RecurringPaymentsView() {
       if (data.success) {
         setRecurringPayments(data.recurringPayments || []);
         setSuggestions(data.suggestions || []);
+        setDismissedSuggestions(data.dismissedSuggestions || []);
         setUpcomingPayments(data.upcomingPayments || []);
         setSummary(data.summary || null);
         
@@ -197,6 +199,15 @@ export default function RecurringPaymentsView() {
                 matchingPaymentId: matchingPayment?.id,
               };
             })
+            .filter(m => {
+              // Filter out dismissed suggestions (using state from component)
+              const dismissedSet = new Set();
+              dismissedSuggestions.forEach(d => {
+                dismissedSet.add(`${d.merchant.toLowerCase()}:${d.category}`);
+              });
+              const key = `${m.merchant.toLowerCase()}:${cat}`;
+              return !dismissedSet.has(key);
+            })
             .sort((a, b) => {
               // Sort: unconfigured first, then by total amount
               if (a.isConfigured !== b.isConfigured) {
@@ -249,7 +260,7 @@ export default function RecurringPaymentsView() {
     if (token && (activeTab === 'subscriptions' || activeTab === 'bills' || activeTab === 'credit-cards')) {
       fetchCategoryTransactions();
     }
-  }, [token, activeTab, recurringPayments]);
+  }, [token, activeTab, recurringPayments, dismissedSuggestions]);
 
   // Calculate modal position when linkModalPosition changes (similar to CategoryColorPicker)
   useEffect(() => {
@@ -486,6 +497,39 @@ export default function RecurringPaymentsView() {
     } catch (err) {
       console.error('Error linking suggestion:', err);
       setError('Failed to link suggestion to existing payment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDismissSuggestion = async (suggestion) => {
+    if (!confirm(`Are you sure you want to dismiss "${suggestion.merchant}"? This will remove it from suggestions permanently.`)) return;
+    
+    try {
+      setLoading(true);
+      const response = await fetch('/api/plaid/recurring-payments/suggestions/dismiss', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          merchant: suggestion.merchant,
+          category: suggestion.category,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+
+      fetchRecurringPayments(); // Refresh to remove from suggestions
+    } catch (err) {
+      console.error('Error dismissing suggestion:', err);
+      setError('Failed to dismiss suggestion');
     } finally {
       setLoading(false);
     }
@@ -1830,6 +1874,22 @@ export default function RecurringPaymentsView() {
                           🔗 Link to Existing
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDismissSuggestion(suggestion)}
+                        style={{
+                          padding: '8px 16px',
+                          background: '#f3f4f6',
+                          color: '#6b7280',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        ✕ Dismiss
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2179,6 +2239,25 @@ export default function RecurringPaymentsView() {
                             }}
                           >
                             {expandedMerchant === merchantGroup.merchant ? 'Hide' : 'Show'} Transactions
+                          </button>
+                          <button
+                            onClick={() => handleDismissSuggestion({
+                              merchant: merchantGroup.merchant,
+                              category: currentCategory,
+                            })}
+                            style={{
+                              padding: '8px 16px',
+                              background: '#f3f4f6',
+                              color: '#6b7280',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            ✕ Dismiss
                           </button>
                         </div>
                       </div>

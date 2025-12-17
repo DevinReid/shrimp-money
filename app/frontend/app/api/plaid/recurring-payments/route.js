@@ -165,9 +165,27 @@ export async function GET(req) {
       merchantGroups[merchant].amounts.push(Math.abs(t.amount));
     });
 
+    // Get dismissed suggestions to filter them out
+    let dismissedSuggestions = new Set();
+    if (prisma && prisma.plaidDismissedSuggestion) {
+      try {
+        const dismissed = await prisma.plaidDismissedSuggestion.findMany();
+        dismissed.forEach(d => {
+          // Store as lowercase for case-insensitive matching
+          dismissedSuggestions.add(`${d.merchant.toLowerCase()}:${d.category}`);
+        });
+      } catch (dbError) {
+        console.log('⚠️ Could not read dismissed suggestions:', dbError.message);
+      }
+    }
+
     // Find suggested recurring payments (merchants with 2+ transactions)
     const suggestions = Object.values(merchantGroups)
-      .filter(g => g.transactions.length >= 2)
+      .filter(g => {
+        // Filter out dismissed suggestions
+        const key = `${g.merchant.toLowerCase()}:${g.category}`;
+        return g.transactions.length >= 2 && !dismissedSuggestions.has(key);
+      })
       .map(g => {
         // Calculate amount statistics
         const amounts = g.amounts;
@@ -342,6 +360,16 @@ export async function GET(req) {
         return sum + (rp.amount * multiplier);
       }, 0);
 
+    // Get dismissed suggestions to return to client
+    let dismissedSuggestionsList = [];
+    if (prisma && prisma.plaidDismissedSuggestion) {
+      try {
+        dismissedSuggestionsList = await prisma.plaidDismissedSuggestion.findMany();
+      } catch (dbError) {
+        console.log('⚠️ Could not read dismissed suggestions:', dbError.message);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       recurringPayments: recurringPayments.map(rp => ({
@@ -358,6 +386,10 @@ export async function GET(req) {
         updatedAt: rp.updatedAt?.toISOString(),
       })),
       suggestions,
+      dismissedSuggestions: dismissedSuggestionsList.map(d => ({
+        merchant: d.merchant,
+        category: d.category,
+      })),
       upcomingPayments,
       paymentsByDate,
       summary: {
