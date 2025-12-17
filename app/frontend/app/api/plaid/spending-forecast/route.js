@@ -355,12 +355,14 @@ export async function GET(req) {
       // Generate payments within the forecast window
       while (nextDate <= endDate) {
         if (nextDate >= today) {
-          // Apply 2-day buffer: subtract 2 days from payment date for "need money by" date
-          const bufferedDate = applyBufferDate(nextDate);
-          const dateKey = bufferedDate.toISOString().split('T')[0];
+          // For income: use actual date (no buffer - you get paid on the actual date)
+          // For expenses: apply 2-day buffer (you need money before the payment posts)
+          const isIncome = rp.category === 'Income';
+          const effectiveDate = isIncome ? nextDate : applyBufferDate(nextDate);
+          const dateKey = effectiveDate.toISOString().split('T')[0];
           
-          // Only add if buffered date is still within forecast window
-          if (dailyData[dateKey] && bufferedDate >= today) {
+          // Only add if date is still within forecast window
+          if (dailyData[dateKey] && effectiveDate >= today) {
             // Use max amount for conservative forecasting (as per plan)
             // For variable bills, we use amountMax; for fixed subscriptions, use amount
             const forecastAmount = rp.isVariableAmount && rp.amountMax 
@@ -378,10 +380,10 @@ export async function GET(req) {
               amountMax: rp.amountMax,
               frequency: rp.frequency,
               originalDate: nextDate.toISOString().split('T')[0], // Store original date for reference
-              bufferedDate: dateKey, // Date when money is actually needed
+              effectiveDate: dateKey, // Date when money is actually received/needed
             };
             
-            if (rp.category === 'Income') {
+            if (isIncome) {
               dailyData[dateKey].income.push(paymentEntry);
               dailyData[dateKey].totalIncome += forecastAmount;
             } else {
@@ -591,6 +593,7 @@ export async function GET(req) {
     };
     
     // Monthly income patterns (e.g., salary)
+    // Income uses actual date (no buffer)
     Object.entries(transactionPatterns.income.monthly).forEach(([category, pattern]) => {
       const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
       
@@ -602,8 +605,8 @@ export async function GET(req) {
           const testDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOfMonth);
           
           if (testDate >= today && testDate <= endDate) {
-            const bufferedDate = applyBufferDate(testDate);
-            const dateKey = bufferedDate.toISOString().split('T')[0];
+            // Income: use actual date, no buffer
+            const dateKey = testDate.toISOString().split('T')[0];
             addIncomePattern(dateKey, testDate, category, pattern, 'monthly');
           }
           
@@ -613,6 +616,7 @@ export async function GET(req) {
     });
     
     // Weekly income patterns
+    // Income uses actual date (no buffer)
     Object.entries(transactionPatterns.income.weekly).forEach(([category, pattern]) => {
       const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
       
@@ -623,8 +627,8 @@ export async function GET(req) {
         
         while (testDate <= endDate) {
           if (testDate >= today) {
-            const bufferedDate = applyBufferDate(testDate);
-            const dateKey = bufferedDate.toISOString().split('T')[0];
+            // Income: use actual date, no buffer
+            const dateKey = testDate.toISOString().split('T')[0];
             addIncomePattern(dateKey, testDate, category, pattern, 'weekly');
           }
           
@@ -751,7 +755,7 @@ export async function GET(req) {
       recurringPaymentsCount: recurringPayments.length,
       metadata: {
         bufferDays: 2,
-        note: 'All payment dates include a 2-day buffer. If a payment posts on Jan 2, you need the money by Dec 31.',
+        note: 'Expense dates include a 2-day buffer (if a payment posts on Jan 2, you need the money by Dec 31). Income uses actual dates (no buffer).',
         dataSources: {
           recurringPayments: recurringPayments.length,
           incomePatterns: Object.keys(transactionPatterns.income.monthly).length + Object.keys(transactionPatterns.income.weekly).length,

@@ -14,6 +14,8 @@ export default function SpendingForecastView() {
   const [customBalance, setCustomBalance] = useState('');
   const [showWhatIf, setShowWhatIf] = useState(false);
   const [hoveredPayment, setHoveredPayment] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [selectedDayPosition, setSelectedDayPosition] = useState({ x: 0, y: 0 });
   const { token } = useAuth();
 
   const fetchForecast = async (startBalance = null) => {
@@ -133,7 +135,10 @@ export default function SpendingForecastView() {
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <select
             value={daysToForecast}
-            onChange={(e) => setDaysToForecast(parseInt(e.target.value))}
+            onChange={(e) => {
+              setDaysToForecast(parseInt(e.target.value));
+              fetchForecast();
+            }}
             style={{
               padding: '8px 12px',
               border: '1px solid #d1d5db',
@@ -450,15 +455,31 @@ export default function SpendingForecastView() {
                     gap: '1px',
                     padding: '0 5px',
                   }}>
-                    {dailyProjections.map((day, idx) => {
+                    {dailyProjections.filter((day) => {
+                      // Show exactly 30 days from today in timeline
+                      const dayDate = new Date(day.date);
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const daysDiff = Math.floor((dayDate - today) / (1000 * 60 * 60 * 24));
+                      return daysDiff >= 0 && daysDiff < 30;
+                    }).map((day, idx) => {
                       const height = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
                       const isNegative = day.runningBalance < 0;
                       const hasActivity = day.expenses.length > 0 || day.income.length > 0;
                       const isCritical = criticalDates.some(c => c.date === day.date);
+                      const isSelected = selectedDay?.date === day.date;
                       
                       return (
                         <div
                           key={day.date}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setSelectedDayPosition({
+                              x: rect.left + rect.width / 2,
+                              y: rect.top,
+                            });
+                            setSelectedDay(selectedDay?.date === day.date ? null : day);
+                          }}
                           style={{
                             flex: 1,
                             height: `${Math.max(height, 2)}%`,
@@ -471,10 +492,24 @@ export default function SpendingForecastView() {
                                   : 'linear-gradient(180deg, #d1d5db 0%, #9ca3af 100%)',
                             borderRadius: '2px 2px 0 0',
                             cursor: 'pointer',
-                            transition: 'opacity 0.2s',
+                            transition: 'all 0.2s',
                             opacity: hasActivity ? 1 : 0.5,
+                            border: isSelected ? '2px solid #667eea' : 'none',
+                            boxShadow: isSelected ? '0 0 0 2px rgba(102, 126, 234, 0.2)' : 'none',
                           }}
                           title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}`}
+                          onMouseEnter={(e) => {
+                            if (!isSelected) {
+                              e.currentTarget.style.opacity = '0.8';
+                              e.currentTarget.style.transform = 'scale(1.05)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSelected) {
+                              e.currentTarget.style.opacity = hasActivity ? 1 : 0.5;
+                              e.currentTarget.style.transform = 'scale(1)';
+                            }
+                          }}
                         />
                       );
                     })}
@@ -505,6 +540,237 @@ export default function SpendingForecastView() {
               </div>
             </div>
           )}
+
+          {/* Day Details Modal/Dropdown */}
+          {selectedDay && (() => {
+            const modalWidth = 400;
+            const totalItems = selectedDay.expenses.length + selectedDay.income.length;
+            const modalHeight = Math.min(500, 100 + totalItems * 60);
+            const padding = 20;
+            
+            // Calculate position (centered above the bar, or below if not enough space)
+            let left = selectedDayPosition.x - modalWidth / 2;
+            let top = selectedDayPosition.y - modalHeight - 10; // Above the bar
+            
+            // Keep on screen
+            if (left < padding) left = padding;
+            if (left + modalWidth > window.innerWidth - padding) {
+              left = window.innerWidth - modalWidth - padding;
+            }
+            
+            // If not enough space above, show below
+            if (top < padding) {
+              top = selectedDayPosition.y + 30; // Below the bar
+            }
+            if (top + modalHeight > window.innerHeight - padding) {
+              top = window.innerHeight - modalHeight - padding;
+            }
+            
+            return (
+              <div
+                style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 1000,
+                }}
+                onClick={() => setSelectedDay(null)}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${left}px`,
+                    top: `${top}px`,
+                    width: `${modalWidth}px`,
+                    maxHeight: `${modalHeight}px`,
+                    background: 'white',
+                    borderRadius: '12px',
+                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                    border: '2px solid #667eea',
+                    overflow: 'hidden',
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div style={{
+                    padding: '16px 20px',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '16px' }}>
+                        {new Date(selectedDay.date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </div>
+                      <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>
+                        Balance: {formatCurrency(selectedDay.runningBalance)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedDay(null)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        width: '28px',
+                        height: '28px',
+                        color: 'white',
+                        cursor: 'pointer',
+                        fontSize: '18px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  {/* Content */}
+                  <div style={{
+                    maxHeight: `${modalHeight - 80}px`,
+                    overflowY: 'auto',
+                    padding: '15px',
+                  }}>
+                    {/* Income */}
+                    {selectedDay.income.length > 0 && (
+                      <div style={{ marginBottom: '15px' }}>
+                        <div style={{
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          color: '#10b981',
+                          marginBottom: '8px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                        }}>
+                          Income (+{formatCurrency(selectedDay.totalIncome)})
+                        </div>
+                        {selectedDay.income.map((payment, pIdx) => (
+                          <div
+                            key={`income-${payment.id}-${pIdx}`}
+                            style={{
+                              padding: '10px 12px',
+                              background: '#f0fdf4',
+                              borderRadius: '6px',
+                              marginBottom: '6px',
+                              border: '1px solid #bbf7d0',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: '500', fontSize: '14px' }}>
+                                  {payment.name}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                                  {payment.category} {payment.frequency && `• ${payment.frequency}`}
+                                  {payment.source && ` • ${payment.source === 'category-spending' ? 'Weekly estimate' : payment.source}`}
+                                </div>
+                              </div>
+                              <div style={{ fontWeight: '600', fontSize: '15px', color: '#10b981' }}>
+                                +{formatCurrency(payment.amount)}
+                              </div>
+                            </div>
+                            {payment.isVariable && payment.amountMin && payment.amountMax && (
+                              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                                Range: {formatCurrency(payment.amountMin)} - {formatCurrency(payment.amountMax)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Expenses */}
+                    {selectedDay.expenses.length > 0 && (
+                      <div>
+                        <div style={{
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          color: '#ef4444',
+                          marginBottom: '8px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                        }}>
+                          Expenses (-{formatCurrency(selectedDay.totalExpenses)})
+                        </div>
+                        {selectedDay.expenses.map((payment, pIdx) => (
+                          <div
+                            key={`expense-${payment.id}-${pIdx}`}
+                            style={{
+                              padding: '10px 12px',
+                              background: '#fef2f2',
+                              borderRadius: '6px',
+                              marginBottom: '6px',
+                              border: '1px solid #fecaca',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: '500', fontSize: '14px' }}>
+                                  {payment.name}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                                  {payment.category} {payment.frequency && `• ${payment.frequency}`}
+                                  {payment.source && ` • ${payment.source === 'category-spending' ? 'Weekly estimate' : payment.source}`}
+                                </div>
+                              </div>
+                              <div style={{ fontWeight: '600', fontSize: '15px', color: '#111827' }}>
+                                -{formatCurrency(payment.amount)}
+                              </div>
+                            </div>
+                            {payment.isVariable && payment.amountMin && payment.amountMax && (
+                              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                                Range: {formatCurrency(payment.amountMin)} - {formatCurrency(payment.amountMax)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {selectedDay.expenses.length === 0 && selectedDay.income.length === 0 && (
+                      <div style={{
+                        padding: '20px',
+                        textAlign: 'center',
+                        color: '#6b7280',
+                        fontSize: '14px',
+                      }}>
+                        No transactions scheduled for this day
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Footer */}
+                  <div style={{
+                    padding: '12px 20px',
+                    background: '#f9fafb',
+                    borderTop: '1px solid #e5e7eb',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '13px',
+                    color: '#6b7280',
+                  }}>
+                    <span>Net Change:</span>
+                    <span style={{
+                      fontWeight: '600',
+                      color: selectedDay.netChange >= 0 ? '#10b981' : '#ef4444',
+                    }}>
+                      {selectedDay.netChange >= 0 ? '+' : ''}{formatCurrency(selectedDay.netChange)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Critical Dates */}
           {criticalDates.length > 0 && (
