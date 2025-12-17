@@ -453,27 +453,50 @@ export default function SpendingForecastView() {
                     height: '100%',
                     gap: '1px',
                     padding: '0 5px',
+                    overflowX: daysToForecast > 30 ? 'auto' : 'visible',
+                    minWidth: daysToForecast > 30 ? `${Math.max(daysToForecast * 8, 800)}px` : 'auto',
                   }}>
                     {dailyProjections.filter((day) => {
-                      // Show exactly 30 days from today in timeline
+                      // Show timeline based on forecast period, but cap at 30 days for display
                       const dayDate = new Date(day.date);
                       const today = new Date();
                       today.setHours(0, 0, 0, 0);
                       const daysDiff = Math.floor((dayDate - today) / (1000 * 60 * 60 * 24));
-                      return daysDiff >= 0 && daysDiff < 30;
+                      const maxDays = daysToForecast > 30 ? daysToForecast : 30;
+                      return daysDiff >= 0 && daysDiff < maxDays;
                     }).map((day, idx) => {
-                      const height = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
+                      const barHeight = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
                       const isNegative = day.runningBalance < 0;
-                      const hasIncome = day.income.length > 0;
-                      const isCritical = criticalDates.some(c => c.date === day.date);
                       const isSelected = selectedDay?.date === day.date;
                       
-                      // Check if day has recurring payments (not category-spending or transaction-pattern)
-                      const hasRecurring = day.expenses.some(e => 
-                        !e.source || (e.source !== 'category-spending' && e.source !== 'transaction-pattern')
-                      ) || day.income.some(i => 
+                      // Calculate segments for this day's changes
+                      const recurringIncome = day.income.filter(i => 
                         !i.source || (i.source !== 'category-spending' && i.source !== 'transaction-pattern')
-                      );
+                      ).reduce((sum, i) => sum + i.amount, 0);
+                      
+                      const recurringExpenses = day.expenses.filter(e => 
+                        !e.source || (e.source !== 'category-spending' && e.source !== 'transaction-pattern')
+                      ).reduce((sum, e) => sum + e.amount, 0);
+                      
+                      const otherExpenses = day.expenses.filter(e => 
+                        e.source === 'category-spending' || e.source === 'transaction-pattern'
+                      ).reduce((sum, e) => sum + e.amount, 0);
+                      
+                      // Get previous day's balance (or starting balance for first day)
+                      const prevBalance = idx > 0 
+                        ? dailyProjections[idx - 1].runningBalance 
+                        : forecast.startingBalance;
+                      
+                      // Calculate positions in the chart
+                      const prevBalanceHeight = ((prevBalance - chartData.minBalance) / chartData.range) * 100;
+                      const currentBalanceHeight = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
+                      
+                      // Calculate segment heights (as percentages of range)
+                      const incomeSegmentHeight = (recurringIncome / chartData.range) * 100;
+                      const recurringExpenseSegmentHeight = (recurringExpenses / chartData.range) * 100;
+                      const otherExpenseSegmentHeight = (otherExpenses / chartData.range) * 100;
+                      
+                      const barWidth = daysToForecast > 30 ? '4px' : 'auto';
                       
                       return (
                         <div
@@ -487,25 +510,17 @@ export default function SpendingForecastView() {
                             setSelectedDay(selectedDay?.date === day.date ? null : day);
                           }}
                           style={{
-                            flex: 1,
-                            height: `${Math.max(height, 2)}%`,
-                            background: isNegative 
-                              ? 'linear-gradient(180deg, #fca5a5 0%, #ef4444 100%)'
-                              : hasRecurring
-                                ? 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)'
-                                : hasIncome
-                                  ? 'linear-gradient(180deg, #86efac 0%, #10b981 100%)'
-                                  : isCritical
-                                    ? 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)'
-                                    : 'linear-gradient(180deg, #d1d5db 0%, #9ca3af 100%)',
-                            borderRadius: '2px 2px 0 0',
+                            flex: daysToForecast > 30 ? '0 0 auto' : 1,
+                            width: barWidth,
+                            height: `${Math.max(barHeight, 2)}%`,
+                            position: 'relative',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
-                            opacity: (hasRecurring || hasIncome || day.expenses.length > 0) ? 1 : 0.5,
+                            opacity: (recurringIncome > 0 || recurringExpenses > 0 || otherExpenses > 0) ? 1 : 0.5,
                             border: isSelected ? '2px solid #667eea' : 'none',
                             boxShadow: isSelected ? '0 0 0 2px rgba(102, 126, 234, 0.2)' : 'none',
                           }}
-                          title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}${hasIncome ? ' • Payday!' : ''}`}
+                          title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}\nRecurring Income: ${formatCurrency(recurringIncome)}\nRecurring Expenses: ${formatCurrency(recurringExpenses)}\nOther Expenses: ${formatCurrency(otherExpenses)}`}
                           onMouseEnter={(e) => {
                             if (!isSelected) {
                               e.currentTarget.style.opacity = '0.8';
@@ -514,11 +529,66 @@ export default function SpendingForecastView() {
                           }}
                           onMouseLeave={(e) => {
                             if (!isSelected) {
-                              e.currentTarget.style.opacity = (hasRecurring || hasIncome || day.expenses.length > 0) ? 1 : 0.5;
+                              e.currentTarget.style.opacity = (recurringIncome > 0 || recurringExpenses > 0 || otherExpenses > 0) ? 1 : 0.5;
                               e.currentTarget.style.transform = 'scale(1)';
                             }
                           }}
-                        />
+                        >
+                          {/* Segmented bar showing balance composition */}
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column-reverse',
+                            borderRadius: '2px 2px 0 0',
+                            overflow: 'hidden',
+                          }}>
+                            {/* Base balance segment (gray) - shows previous balance position */}
+                            <div style={{
+                              height: `${Math.max(prevBalanceHeight, 0)}%`,
+                              background: prevBalance < 0
+                                ? 'linear-gradient(180deg, #fca5a5 0%, #ef4444 100%)'
+                                : 'linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%)',
+                              minHeight: prevBalanceHeight > 0 ? '1px' : '0',
+                              opacity: 0.3,
+                            }} />
+                            
+                            {/* Recurring income segment (green) - stacked on top of base */}
+                            {recurringIncome > 0 && (
+                              <div style={{
+                                height: `${Math.max(incomeSegmentHeight, 0.5)}%`,
+                                background: 'linear-gradient(180deg, #86efac 0%, #10b981 100%)',
+                                minHeight: '2px',
+                                borderTop: '1px solid rgba(255, 255, 255, 0.3)',
+                              }} />
+                            )}
+                            
+                            {/* Recurring expenses segment (blue) - shown as reduction */}
+                            {recurringExpenses > 0 && (
+                              <div style={{
+                                height: `${Math.max(recurringExpenseSegmentHeight, 0.5)}%`,
+                                background: 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)',
+                                minHeight: '2px',
+                                borderTop: '1px solid rgba(255, 255, 255, 0.3)',
+                                marginTop: '-1px',
+                              }} />
+                            )}
+                            
+                            {/* Other expenses segment (orange) - shown as reduction */}
+                            {otherExpenses > 0 && (
+                              <div style={{
+                                height: `${Math.max(otherExpenseSegmentHeight, 0.5)}%`,
+                                background: 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)',
+                                minHeight: '2px',
+                                borderTop: '1px solid rgba(255, 255, 255, 0.3)',
+                                marginTop: '-1px',
+                              }} />
+                            )}
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
@@ -535,21 +605,26 @@ export default function SpendingForecastView() {
                 flexWrap: 'wrap',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#667eea', borderRadius: '2px' }} />
-                  <span>Recurring Payment</span>
+                  <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px' }} />
+                  <span>Payday (Recurring Income)</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px' }} />
-                  <span>Payday</span>
+                  <div style={{ width: '12px', height: '12px', background: '#667eea', borderRadius: '2px' }} />
+                  <span>Recurring Expenses</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ width: '12px', height: '12px', background: '#f59e0b', borderRadius: '2px' }} />
-                  <span>High Expenses</span>
+                  <span>Other Expenses</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#ef4444', borderRadius: '2px' }} />
-                  <span>Negative Balance</span>
+                  <div style={{ width: '12px', height: '12px', background: '#d1d5db', borderRadius: '2px' }} />
+                  <span>Base Balance</span>
                 </div>
+                {daysToForecast > 30 && (
+                  <div style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>
+                    Scroll horizontally to see all days
+                  </div>
+                )}
               </div>
             </div>
           )}
