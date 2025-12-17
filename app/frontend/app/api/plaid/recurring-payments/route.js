@@ -122,16 +122,32 @@ export async function GET(req) {
       });
     }
 
+    // Helper function to normalize category names
+    const normalizeCategory = (category) => {
+      if (!category) return null;
+      const categoryLower = category.toLowerCase().trim();
+      if (categoryLower === 'subscription' || categoryLower === 'subscriptions') return 'Subscription';
+      if (categoryLower === 'bill' || categoryLower === 'bills') return 'Bill';
+      if (categoryLower === 'credit card' || categoryLower === 'credit cards') return 'Credit Card';
+      if (categoryLower === 'income') return 'Income';
+      return category; // Return original if no match
+    };
+
     // Filter transactions to only those with recurring categories
     categorizedTransactions = allTransactions
       .filter(t => {
         const category = categoryMap[t.transaction_id];
-        return category && RECURRING_CATEGORIES.includes(category);
+        if (!category) return false;
+        const normalized = normalizeCategory(category);
+        return normalized && RECURRING_CATEGORIES.includes(normalized);
       })
-      .map(t => ({
-        ...t,
-        userCategory: categoryMap[t.transaction_id],
-      }));
+      .map(t => {
+        const category = categoryMap[t.transaction_id];
+        return {
+          ...t,
+          userCategory: normalizeCategory(category) || category, // Use normalized category
+        };
+      });
 
     // Group transactions by merchant to suggest recurring payments not yet configured
     // Include both primary merchant names AND aliases

@@ -146,8 +146,23 @@ export default function RecurringPaymentsView() {
 
         data.transactions.forEach(t => {
           const category = t.userCategory;
-          if (category === 'Subscription' || category === 'Bill' || category === 'Credit Card') {
-            grouped[category].push(t);
+          if (!category) return;
+          
+          // Normalize category name for matching (case-insensitive)
+          const categoryLower = category.toLowerCase().trim();
+          
+          // Map variations to standard category names
+          let mappedCategory = null;
+          if (categoryLower === 'subscription' || categoryLower === 'subscriptions') {
+            mappedCategory = 'Subscription';
+          } else if (categoryLower === 'bill' || categoryLower === 'bills') {
+            mappedCategory = 'Bill';
+          } else if (categoryLower === 'credit card' || categoryLower === 'credit cards') {
+            mappedCategory = 'Credit Card';
+          }
+          
+          if (mappedCategory) {
+            grouped[mappedCategory].push(t);
           }
         });
 
