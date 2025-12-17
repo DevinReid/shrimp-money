@@ -466,6 +466,7 @@ export default function SpendingForecastView() {
                       const height = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
                       const isNegative = day.runningBalance < 0;
                       const hasActivity = day.expenses.length > 0 || day.income.length > 0;
+                      const hasIncome = day.income.length > 0;
                       const isCritical = criticalDates.some(c => c.date === day.date);
                       const isSelected = selectedDay?.date === day.date;
                       
@@ -485,11 +486,13 @@ export default function SpendingForecastView() {
                             height: `${Math.max(height, 2)}%`,
                             background: isNegative 
                               ? 'linear-gradient(180deg, #fca5a5 0%, #ef4444 100%)'
-                              : isCritical
-                                ? 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)'
-                                : hasActivity
-                                  ? 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)'
-                                  : 'linear-gradient(180deg, #d1d5db 0%, #9ca3af 100%)',
+                              : hasIncome
+                                ? 'linear-gradient(180deg, #86efac 0%, #10b981 100%)'
+                                : isCritical
+                                  ? 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)'
+                                  : hasActivity
+                                    ? 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)'
+                                    : 'linear-gradient(180deg, #d1d5db 0%, #9ca3af 100%)',
                             borderRadius: '2px 2px 0 0',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
@@ -497,7 +500,7 @@ export default function SpendingForecastView() {
                             border: isSelected ? '2px solid #667eea' : 'none',
                             boxShadow: isSelected ? '0 0 0 2px rgba(102, 126, 234, 0.2)' : 'none',
                           }}
-                          title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}`}
+                          title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}${hasIncome ? ' • Payday!' : ''}`}
                           onMouseEnter={(e) => {
                             if (!isSelected) {
                               e.currentTarget.style.opacity = '0.8';
@@ -524,7 +527,12 @@ export default function SpendingForecastView() {
                 justifyContent: 'center',
                 fontSize: '12px',
                 color: '#6b7280',
+                flexWrap: 'wrap',
               }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px' }} />
+                  <span>Payday</span>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ width: '12px', height: '12px', background: '#667eea', borderRadius: '2px' }} />
                   <span>Activity Day</span>
