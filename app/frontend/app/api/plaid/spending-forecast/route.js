@@ -402,6 +402,143 @@ export async function GET(req) {
       }
     });
 
+    // Calculate category spending stats from transactions
+    // Categories to include in forecast (regular spending categories)
+    const forecastCategories = [
+      'Groceries',
+      'Dining out',
+      'Partying',
+      'Amazon',
+      'Cars',
+      'Pets',
+      'Beauty',
+      'Shopping',
+      'Travel',
+      'Entertainment',
+      'Thrift',
+      'Devin',
+      'Lunch',
+      'Uncategorized',
+      'Gifts',
+    ];
+    
+    // Helper to normalize category names
+    const normalizeCategory = (category) => {
+      if (!category) return null;
+      const categoryLower = category.toLowerCase().trim();
+      if (categoryLower === 'groceries' || categoryLower === 'grocery') return 'Groceries';
+      if (categoryLower === 'dining out' || categoryLower === 'dining' || categoryLower === 'restaurants') return 'Dining out';
+      if (categoryLower === 'partying' || categoryLower === 'party') return 'Partying';
+      if (categoryLower === 'amazon') return 'Amazon';
+      if (categoryLower === 'cars' || categoryLower === 'car' || categoryLower === 'automotive') return 'Cars';
+      if (categoryLower === 'pets' || categoryLower === 'pet') return 'Pets';
+      if (categoryLower === 'beauty' || categoryLower === 'cosmetics') return 'Beauty';
+      if (categoryLower === 'shopping') return 'Shopping';
+      if (categoryLower === 'travel') return 'Travel';
+      if (categoryLower === 'entertainment') return 'Entertainment';
+      if (categoryLower === 'thrift' || categoryLower === 'thrifting') return 'Thrift';
+      if (categoryLower === 'devin') return 'Devin';
+      if (categoryLower === 'lunch') return 'Lunch';
+      if (categoryLower === 'uncategorized') return 'Uncategorized';
+      if (categoryLower === 'gifts' || categoryLower === 'gift') return 'Gifts';
+      return null;
+    };
+    
+    // Calculate monthly spending stats for forecast categories
+    const categoryMonthlyData = {};
+    const currentYear = new Date().getFullYear();
+    const yearStart = new Date(currentYear, 0, 1);
+    const yearEnd = new Date(currentYear, 11, 31, 23, 59, 59);
+    
+    // Filter transactions from current year and group by category and month
+    allTransactions
+      .filter(t => {
+        if (!t.isExpense) return false;
+        const txDate = new Date(t.date);
+        return txDate >= yearStart && txDate <= yearEnd;
+      })
+      .forEach(t => {
+        const normalizedCategory = normalizeCategory(t.userCategory);
+        if (!normalizedCategory || !forecastCategories.includes(normalizedCategory)) return;
+        
+        const txDate = new Date(t.date);
+        const monthIndex = txDate.getMonth();
+        const amount = Math.abs(t.amount);
+        
+        if (!categoryMonthlyData[normalizedCategory]) {
+          categoryMonthlyData[normalizedCategory] = Array(12).fill(0);
+        }
+        
+        categoryMonthlyData[normalizedCategory][monthIndex] += amount;
+      });
+    
+    // Calculate min, avg, max for each category
+    const categorySpendingStats = {};
+    Object.entries(categoryMonthlyData).forEach(([category, monthlyAmounts]) => {
+      const nonZeroMonths = monthlyAmounts.filter(a => a > 0);
+      if (nonZeroMonths.length === 0) return;
+      
+      const avgMonth = nonZeroMonths.reduce((a, b) => a + b, 0) / nonZeroMonths.length;
+      const minMonth = Math.min(...nonZeroMonths);
+      const maxMonth = Math.max(...monthlyAmounts);
+      
+      categorySpendingStats[category] = {
+        minMonth: Math.round(minMonth * 100) / 100,
+        avgMonth: Math.round(avgMonth * 100) / 100,
+        maxMonth: Math.round(maxMonth * 100) / 100,
+        monthsActive: nonZeroMonths.length,
+      };
+    });
+
+    // Add category-based weekly spending to forecast
+    // Distribute monthly averages across weeks (4.33 weeks per month)
+    const weeksPerMonth = 4.33;
+    
+    Object.entries(categorySpendingStats).forEach(([category, stats]) => {
+      if (stats.avgMonth <= 0 || stats.monthsActive < 1) return; // Skip if no data
+      
+      // Calculate weekly amount (monthly average / 4.33 weeks)
+      const weeklyAmount = stats.avgMonth / weeksPerMonth;
+      const weeklyAmountMin = stats.minMonth / weeksPerMonth;
+      const weeklyAmountMax = stats.maxMonth / weeksPerMonth;
+      
+      // Distribute across forecast period (weekly, starting on Sundays)
+      let currentDate = new Date(today);
+      
+      // Find next Sunday (or use today if it's Sunday)
+      const daysUntilSunday = (7 - currentDate.getDay()) % 7;
+      if (daysUntilSunday > 0) {
+        currentDate.setDate(currentDate.getDate() + daysUntilSunday);
+      }
+      
+      while (currentDate <= endDate) {
+        const dateKey = currentDate.toISOString().split('T')[0];
+        
+        if (dailyData[dateKey]) {
+          // Use average for forecast (user can see min/max in tooltip)
+          const forecastAmount = weeklyAmount;
+          
+          const categoryEntry = {
+            id: `category-${category}-${dateKey}`,
+            name: `${category} (weekly estimate)`,
+            category: category,
+            amount: Math.round(forecastAmount * 100) / 100,
+            isVariable: stats.maxMonth > stats.minMonth,
+            amountMin: Math.round(weeklyAmountMin * 100) / 100,
+            amountMax: Math.round(weeklyAmountMax * 100) / 100,
+            frequency: 'weekly',
+            source: 'category-spending',
+          };
+          
+          dailyData[dateKey].expenses.push(categoryEntry);
+          dailyData[dateKey].totalExpenses += forecastAmount;
+        }
+        
+        // Move to next week (7 days)
+        currentDate.setDate(currentDate.getDate() + 7);
+      }
+    });
+
     // Add transaction-based patterns from spending analysis
     // These supplement recurring payments with actual historical patterns
     
@@ -619,8 +756,13 @@ export async function GET(req) {
           recurringPayments: recurringPayments.length,
           incomePatterns: Object.keys(transactionPatterns.income.monthly).length + Object.keys(transactionPatterns.income.weekly).length,
           expensePatterns: Object.keys(transactionPatterns.expenses.monthly).length + Object.keys(transactionPatterns.expenses.weekly).length,
+          categorySpending: Object.keys(categorySpendingStats).length,
           transactionsAnalyzed: allTransactions.length,
         },
+        categorySpendingStats: Object.entries(categorySpendingStats).map(([category, stats]) => ({
+          category,
+          ...stats,
+        })),
       },
     });
   } catch (error) {
