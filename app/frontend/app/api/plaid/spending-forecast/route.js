@@ -499,10 +499,8 @@ export async function GET(req) {
     Object.entries(categorySpendingStats).forEach(([category, stats]) => {
       if (stats.avgMonth <= 0 || stats.monthsActive < 1) return; // Skip if no data
       
-      // Calculate weekly amount (monthly average / 4.33 weeks)
+      // Calculate weekly amount using average only (ignore min/max due to outliers)
       const weeklyAmount = stats.avgMonth / weeksPerMonth;
-      const weeklyAmountMin = stats.minMonth / weeksPerMonth;
-      const weeklyAmountMax = stats.maxMonth / weeksPerMonth;
       
       // Distribute across forecast period (weekly, starting on Sundays)
       let currentDate = new Date(today);
@@ -517,7 +515,7 @@ export async function GET(req) {
         const dateKey = currentDate.toISOString().split('T')[0];
         
         if (dailyData[dateKey]) {
-          // Use average for forecast (user can see min/max in tooltip)
+          // Use average only for forecast (no min/max ranges)
           const forecastAmount = weeklyAmount;
           
           const categoryEntry = {
@@ -525,9 +523,7 @@ export async function GET(req) {
             name: `${category} (weekly estimate)`,
             category: category,
             amount: Math.round(forecastAmount * 100) / 100,
-            isVariable: stats.maxMonth > stats.minMonth,
-            amountMin: Math.round(weeklyAmountMin * 100) / 100,
-            amountMax: Math.round(weeklyAmountMax * 100) / 100,
+            isVariable: false, // Always use average, no variable ranges
             frequency: 'weekly',
             source: 'category-spending',
           };
