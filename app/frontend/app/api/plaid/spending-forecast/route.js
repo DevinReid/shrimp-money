@@ -406,13 +406,13 @@ export async function GET(req) {
 
     // Calculate category spending stats from transactions
     // Categories to include in forecast (regular spending categories)
+    // Note: Pets removed - user will add their own recurring payments
     const forecastCategories = [
       'Groceries',
       'Dining out',
       'Partying',
       'Amazon',
       'Cars',
-      'Pets',
       'Beauty',
       'Shopping',
       'Travel',
@@ -433,7 +433,6 @@ export async function GET(req) {
       if (categoryLower === 'partying' || categoryLower === 'party') return 'Partying';
       if (categoryLower === 'amazon') return 'Amazon';
       if (categoryLower === 'cars' || categoryLower === 'car' || categoryLower === 'automotive') return 'Cars';
-      if (categoryLower === 'pets' || categoryLower === 'pet') return 'Pets';
       if (categoryLower === 'beauty' || categoryLower === 'cosmetics') return 'Beauty';
       if (categoryLower === 'shopping') return 'Shopping';
       if (categoryLower === 'travel') return 'Travel';
@@ -492,48 +491,95 @@ export async function GET(req) {
       };
     });
 
-    // Add category-based weekly spending to forecast
-    // Distribute monthly averages across weeks (4.33 weeks per month)
+    // Add category-based spending to forecast with custom schedules
+    // Distribute monthly averages based on category-specific schedules
     const weeksPerMonth = 4.33;
+    const daysPerMonth = 30.44; // Average days per month
+    
+    // Define category schedules
+    const categorySchedules = {
+      'Partying': { type: 'dayOfWeek', days: [4] }, // Thursday (0=Sunday, 4=Thursday)
+      'Dining out': { type: 'dayOfWeek', days: [4] }, // Thursday
+      'Thrift': { type: 'dayOfWeek', days: [4] }, // Thursday
+      'Shopping': { type: 'dayOfWeek', days: [5, 6, 0] }, // Friday, Saturday, Sunday
+      'Groceries': { type: 'daily' }, // Every day
+      'Amazon': { type: 'daily' }, // Every day
+      'Beauty': { type: 'daily' }, // Every day
+      'Cars': { type: 'daily' }, // Every day
+      'Entertainment': { type: 'daily' }, // Every day (spread throughout month)
+      'Travel': { type: 'daily' }, // Every day (spread throughout month)
+    };
     
     Object.entries(categorySpendingStats).forEach(([category, stats]) => {
       if (stats.avgMonth <= 0 || stats.monthsActive < 1) return; // Skip if no data
       
-      // Calculate weekly amount using average only (ignore min/max due to outliers)
-      const weeklyAmount = stats.avgMonth / weeksPerMonth;
+      const schedule = categorySchedules[category];
+      if (!schedule) return; // Skip categories without a schedule (like Pets, which we removed)
       
-      // Distribute across forecast period (weekly, starting on Sundays)
-      let currentDate = new Date(today);
+      let forecastAmount;
+      let frequency;
       
-      // Find next Sunday (or use today if it's Sunday)
-      const daysUntilSunday = (7 - currentDate.getDay()) % 7;
-      if (daysUntilSunday > 0) {
-        currentDate.setDate(currentDate.getDate() + daysUntilSunday);
-      }
-      
-      while (currentDate <= endDate) {
-        const dateKey = currentDate.toISOString().split('T')[0];
+      if (schedule.type === 'daily') {
+        // Calculate daily amount (monthly average / days per month)
+        forecastAmount = stats.avgMonth / daysPerMonth;
+        frequency = 'daily';
         
-        if (dailyData[dateKey]) {
-          // Use average only for forecast (no min/max ranges)
-          const forecastAmount = weeklyAmount;
+        // Add to every day in forecast period
+        let currentDate = new Date(today);
+        while (currentDate <= endDate) {
+          const dateKey = currentDate.toISOString().split('T')[0];
           
-          const categoryEntry = {
-            id: `category-${category}-${dateKey}`,
-            name: `${category} (weekly estimate)`,
-            category: category,
-            amount: Math.round(forecastAmount * 100) / 100,
-            isVariable: false, // Always use average, no variable ranges
-            frequency: 'weekly',
-            source: 'category-spending',
-          };
+          if (dailyData[dateKey]) {
+            const categoryEntry = {
+              id: `category-${category}-${dateKey}`,
+              name: `${category} (daily estimate)`,
+              category: category,
+              amount: Math.round(forecastAmount * 100) / 100,
+              isVariable: false,
+              frequency: 'daily',
+              source: 'category-spending',
+            };
+            
+            dailyData[dateKey].expenses.push(categoryEntry);
+            dailyData[dateKey].totalExpenses += forecastAmount;
+          }
           
-          dailyData[dateKey].expenses.push(categoryEntry);
-          dailyData[dateKey].totalExpenses += forecastAmount;
+          currentDate.setDate(currentDate.getDate() + 1);
         }
+      } else if (schedule.type === 'dayOfWeek') {
+        // Calculate amount per occurrence
+        // For weekly categories: monthly average / (weeks per month * occurrences per week)
+        const occurrencesPerWeek = schedule.days.length;
+        const weeklyAmount = stats.avgMonth / (weeksPerMonth * occurrencesPerWeek);
+        forecastAmount = weeklyAmount;
+        frequency = 'weekly';
         
-        // Move to next week (7 days)
-        currentDate.setDate(currentDate.getDate() + 7);
+        // Add to specific days of week
+        let currentDate = new Date(today);
+        while (currentDate <= endDate) {
+          const dayOfWeek = currentDate.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+          
+          if (schedule.days.includes(dayOfWeek)) {
+            const dateKey = currentDate.toISOString().split('T')[0];
+            
+            if (dailyData[dateKey]) {
+              const categoryEntry = {
+                id: `category-${category}-${dateKey}`,
+                name: `${category} (weekly estimate)`,
+                category: category,
+                amount: Math.round(forecastAmount * 100) / 100,
+                isVariable: false,
+                frequency: 'weekly',
+                source: 'category-spending',
+              };
+              
+              dailyData[dateKey].expenses.push(categoryEntry);
+              dailyData[dateKey].totalExpenses += forecastAmount;
+            }
+          }
+          
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
       }
     });
 
