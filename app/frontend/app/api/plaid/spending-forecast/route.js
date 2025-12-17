@@ -406,13 +406,13 @@ export async function GET(req) {
 
     // Calculate category spending stats from transactions
     // Categories to include in forecast (regular spending categories)
-    // Note: Pets removed - user will add their own recurring payments
     const forecastCategories = [
       'Groceries',
       'Dining out',
       'Partying',
       'Amazon',
       'Cars',
+      'Pets',
       'Beauty',
       'Shopping',
       'Travel',
@@ -433,6 +433,7 @@ export async function GET(req) {
       if (categoryLower === 'partying' || categoryLower === 'party') return 'Partying';
       if (categoryLower === 'amazon') return 'Amazon';
       if (categoryLower === 'cars' || categoryLower === 'car' || categoryLower === 'automotive') return 'Cars';
+      if (categoryLower === 'pets' || categoryLower === 'pet') return 'Pets';
       if (categoryLower === 'beauty' || categoryLower === 'cosmetics') return 'Beauty';
       if (categoryLower === 'shopping') return 'Shopping';
       if (categoryLower === 'travel') return 'Travel';
@@ -506,6 +507,7 @@ export async function GET(req) {
       'Amazon': { type: 'daily' }, // Every day
       'Beauty': { type: 'daily' }, // Every day
       'Cars': { type: 'daily' }, // Every day
+      'Pets': { type: 'daily' }, // Every day (spread throughout month)
       'Entertainment': { type: 'daily' }, // Every day (spread throughout month)
       'Travel': { type: 'daily' }, // Every day (spread throughout month)
     };
