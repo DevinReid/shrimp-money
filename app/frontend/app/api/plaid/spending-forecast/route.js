@@ -362,28 +362,80 @@ export async function GET(req) {
     // Generate all upcoming payments for each recurring payment
     // Apply 2-day buffer: if payment is Jan 2, we need money by Dec 31
     recurringPayments.forEach(rp => {
-      let nextDate = rp.nextPaymentDate ? new Date(rp.nextPaymentDate) : null;
+      let nextDate = null;
       
-      // Normalize nextDate to midnight to avoid timezone issues
-      if (nextDate) {
-        nextDate.setHours(0, 0, 0, 0);
-      }
-      
-      // If no next payment date, calculate from last payment
-      if (!nextDate && rp.lastPaymentDate) {
-        nextDate = calculateNextPaymentDate(
-          rp.lastPaymentDate,
-          rp.frequency,
-          rp.frequencyDays,
-          rp.dayOfMonth,
-          rp.dayOfWeek
-        );
-      }
-      
-      // If still no date, start from today
-      if (!nextDate) {
+      // For weekly/bi-weekly payments with dayOfWeek, always calculate from today
+      // to ensure we get the correct day of week (ignore nextPaymentDate if it's wrong)
+      if ((rp.frequency === 'weekly' || rp.frequency === 'bi-weekly') && 
+          rp.dayOfWeek !== null && rp.dayOfWeek !== undefined) {
+        // Always find the next occurrence of the specified day from today
         nextDate = new Date(today);
+        const currentDay = nextDate.getDay();
+        let daysUntilTarget = (rp.dayOfWeek - currentDay + 7) % 7;
+        
+        if (daysUntilTarget === 0) {
+          // Today is the target day, go to next occurrence
+          daysUntilTarget = rp.frequency === 'bi-weekly' ? 14 : 7;
+        } else if (rp.frequency === 'bi-weekly') {
+          // For bi-weekly, we need to find the next bi-weekly occurrence
+          // First, find the next occurrence of the day
+          // Then check if we need to add another week to make it bi-weekly
+          // For simplicity, we'll use calculateNextPaymentDate which handles this
+          if (rp.lastPaymentDate) {
+            // Calculate from last payment to maintain bi-weekly pattern
+            nextDate = calculateNextPaymentDate(
+              rp.lastPaymentDate,
+              rp.frequency,
+              rp.frequencyDays,
+              rp.dayOfMonth,
+              rp.dayOfWeek
+            );
+            // If calculated date is in the past, find next occurrence from today
+            if (nextDate < today) {
+              nextDate = new Date(today);
+              daysUntilTarget = (rp.dayOfWeek - currentDay + 7) % 7;
+              if (daysUntilTarget === 0) {
+                daysUntilTarget = 14;
+              } else {
+                daysUntilTarget += 7; // Add a week to make it bi-weekly
+              }
+              nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+            }
+          } else {
+            // No last payment, just find next occurrence and add a week for bi-weekly
+            daysUntilTarget += 7;
+            nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+          }
+        } else {
+          // Weekly - just add days until target
+          nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+        }
         nextDate.setHours(0, 0, 0, 0);
+      } else {
+        // For other frequencies, use nextPaymentDate if available
+        nextDate = rp.nextPaymentDate ? new Date(rp.nextPaymentDate) : null;
+        
+        // Normalize nextDate to midnight to avoid timezone issues
+        if (nextDate) {
+          nextDate.setHours(0, 0, 0, 0);
+        }
+        
+        // If no next payment date, calculate from last payment
+        if (!nextDate && rp.lastPaymentDate) {
+          nextDate = calculateNextPaymentDate(
+            rp.lastPaymentDate,
+            rp.frequency,
+            rp.frequencyDays,
+            rp.dayOfMonth,
+            rp.dayOfWeek
+          );
+        }
+        
+        // If still no date, start from today
+        if (!nextDate) {
+          nextDate = new Date(today);
+          nextDate.setHours(0, 0, 0, 0);
+        }
       }
       
       // Generate payments within the forecast window
