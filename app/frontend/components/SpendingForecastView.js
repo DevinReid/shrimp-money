@@ -482,19 +482,13 @@ export default function SpendingForecastView() {
                         e.source === 'category-spending' || e.source === 'transaction-pattern'
                       ).reduce((sum, e) => sum + e.amount, 0);
                       
-                      // Get previous day's balance (or starting balance for first day)
-                      const prevBalance = idx > 0 
-                        ? dailyProjections[idx - 1].runningBalance 
-                        : forecast.startingBalance;
+                      // Calculate total activity for this day (for proportional segments)
+                      const totalActivity = Math.abs(recurringIncome) + recurringExpenses + otherExpenses;
                       
-                      // Calculate positions in the chart
-                      const prevBalanceHeight = ((prevBalance - chartData.minBalance) / chartData.range) * 100;
-                      const currentBalanceHeight = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
-                      
-                      // Calculate segment heights (as percentages of range)
-                      const incomeSegmentHeight = (recurringIncome / chartData.range) * 100;
-                      const recurringExpenseSegmentHeight = (recurringExpenses / chartData.range) * 100;
-                      const otherExpenseSegmentHeight = (otherExpenses / chartData.range) * 100;
+                      // Calculate segment heights as percentages of the bar (proportional to activity)
+                      const incomeSegmentPercent = totalActivity > 0 ? (Math.abs(recurringIncome) / totalActivity) * 100 : 0;
+                      const recurringExpenseSegmentPercent = totalActivity > 0 ? (recurringExpenses / totalActivity) * 100 : 0;
+                      const otherExpenseSegmentPercent = totalActivity > 0 ? (otherExpenses / totalActivity) * 100 : 0;
                       
                       const barWidth = daysToForecast > 30 ? '4px' : 'auto';
                       
@@ -534,60 +528,61 @@ export default function SpendingForecastView() {
                             }
                           }}
                         >
-                          {/* Segmented bar showing balance composition */}
-                          <div style={{
-                            position: 'absolute',
-                            bottom: 0,
-                            left: 0,
-                            right: 0,
-                            height: '100%',
-                            display: 'flex',
-                            flexDirection: 'column-reverse',
-                            borderRadius: '2px 2px 0 0',
-                            overflow: 'hidden',
-                          }}>
-                            {/* Base balance segment (gray) - shows previous balance position */}
+                          {/* Segmented bar showing activity composition - fills entire bar */}
+                          {totalActivity > 0 ? (
                             <div style={{
-                              height: `${Math.max(prevBalanceHeight, 0)}%`,
-                              background: prevBalance < 0
-                                ? 'linear-gradient(180deg, #fca5a5 0%, #ef4444 100%)'
-                                : 'linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%)',
-                              minHeight: prevBalanceHeight > 0 ? '1px' : '0',
-                              opacity: 0.3,
+                              position: 'absolute',
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              height: '100%',
+                              display: 'flex',
+                              flexDirection: 'column-reverse',
+                              borderRadius: '2px 2px 0 0',
+                              overflow: 'hidden',
+                            }}>
+                              {/* Recurring income segment (green) */}
+                              {recurringIncome > 0 && incomeSegmentPercent > 0 && (
+                                <div style={{
+                                  height: `${incomeSegmentPercent}%`,
+                                  background: 'linear-gradient(180deg, #86efac 0%, #10b981 100%)',
+                                  minHeight: '2px',
+                                  borderTop: '1px solid rgba(255, 255, 255, 0.3)',
+                                }} />
+                              )}
+                              
+                              {/* Recurring expenses segment (blue) */}
+                              {recurringExpenses > 0 && recurringExpenseSegmentPercent > 0 && (
+                                <div style={{
+                                  height: `${recurringExpenseSegmentPercent}%`,
+                                  background: 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)',
+                                  minHeight: '2px',
+                                  borderTop: '1px solid rgba(255, 255, 255, 0.3)',
+                                }} />
+                              )}
+                              
+                              {/* Other expenses segment (orange) */}
+                              {otherExpenses > 0 && otherExpenseSegmentPercent > 0 && (
+                                <div style={{
+                                  height: `${otherExpenseSegmentPercent}%`,
+                                  background: 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)',
+                                  minHeight: '2px',
+                                  borderTop: '1px solid rgba(255, 255, 255, 0.3)',
+                                }} />
+                              )}
+                            </div>
+                          ) : (
+                            // No activity - show gray bar
+                            <div style={{
+                              position: 'absolute',
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              height: '100%',
+                              background: 'linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%)',
+                              borderRadius: '2px 2px 0 0',
                             }} />
-                            
-                            {/* Recurring income segment (green) - stacked on top of base */}
-                            {recurringIncome > 0 && (
-                              <div style={{
-                                height: `${Math.max(incomeSegmentHeight, 0.5)}%`,
-                                background: 'linear-gradient(180deg, #86efac 0%, #10b981 100%)',
-                                minHeight: '2px',
-                                borderTop: '1px solid rgba(255, 255, 255, 0.3)',
-                              }} />
-                            )}
-                            
-                            {/* Recurring expenses segment (blue) - shown as reduction */}
-                            {recurringExpenses > 0 && (
-                              <div style={{
-                                height: `${Math.max(recurringExpenseSegmentHeight, 0.5)}%`,
-                                background: 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)',
-                                minHeight: '2px',
-                                borderTop: '1px solid rgba(255, 255, 255, 0.3)',
-                                marginTop: '-1px',
-                              }} />
-                            )}
-                            
-                            {/* Other expenses segment (orange) - shown as reduction */}
-                            {otherExpenses > 0 && (
-                              <div style={{
-                                height: `${Math.max(otherExpenseSegmentHeight, 0.5)}%`,
-                                background: 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)',
-                                minHeight: '2px',
-                                borderTop: '1px solid rgba(255, 255, 255, 0.3)',
-                                marginTop: '-1px',
-                              }} />
-                            )}
-                          </div>
+                          )}
                         </div>
                       );
                     })}
@@ -615,10 +610,6 @@ export default function SpendingForecastView() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ width: '12px', height: '12px', background: '#f59e0b', borderRadius: '2px' }} />
                   <span>Other Expenses</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#d1d5db', borderRadius: '2px' }} />
-                  <span>Base Balance</span>
                 </div>
                 {daysToForecast > 30 && (
                   <div style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>
