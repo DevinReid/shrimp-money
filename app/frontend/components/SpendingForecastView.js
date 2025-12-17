@@ -105,10 +105,18 @@ export default function SpendingForecastView() {
     };
   }, [dailyProjections, forecast]);
 
-  // Get days with activity (expenses or income)
+  // Get days with activity (expenses or income) within the forecast period
   const activeDays = useMemo(() => {
-    return dailyProjections.filter(d => d.expenses.length > 0 || d.income.length > 0);
-  }, [dailyProjections]);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return dailyProjections.filter(d => {
+      const dayDate = new Date(d.date);
+      dayDate.setHours(0, 0, 0, 0);
+      const daysDiff = Math.floor((dayDate - today) / (1000 * 60 * 60 * 24));
+      const maxDays = daysToForecast > 30 ? daysToForecast : 30;
+      return daysDiff >= 0 && daysDiff < maxDays && (d.expenses.length > 0 || d.income.length > 0);
+    });
+  }, [dailyProjections, daysToForecast]);
 
   if (loading && !forecast) {
     return (

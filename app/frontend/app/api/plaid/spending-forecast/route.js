@@ -8,14 +8,40 @@ const prisma = require('@/lib/prisma');
  */
 function calculateNextPaymentDate(lastPaymentDate, frequency, frequencyDays, dayOfMonth, dayOfWeek) {
   const last = new Date(lastPaymentDate);
+  // Normalize to midnight to avoid timezone issues
+  last.setHours(0, 0, 0, 0);
   const next = new Date(last);
   
   switch (frequency) {
     case 'weekly':
-      next.setDate(next.getDate() + 7);
+      if (dayOfWeek !== null && dayOfWeek !== undefined) {
+        // Find next occurrence of the specified day of week
+        const currentDay = next.getDay();
+        let daysToAdd = (dayOfWeek - currentDay + 7) % 7;
+        // If it's the same day, go to next week
+        if (daysToAdd === 0) {
+          daysToAdd = 7;
+        }
+        next.setDate(next.getDate() + daysToAdd);
+      } else {
+        // No specific day, just add 7 days
+        next.setDate(next.getDate() + 7);
+      }
       break;
     case 'bi-weekly':
-      next.setDate(next.getDate() + 14);
+      if (dayOfWeek !== null && dayOfWeek !== undefined) {
+        // Find next occurrence of the specified day of week (2 weeks later)
+        const currentDay = next.getDay();
+        let daysToAdd = (dayOfWeek - currentDay + 7) % 7;
+        if (daysToAdd === 0) {
+          daysToAdd = 14; // Same day, go 2 weeks forward
+        } else {
+          daysToAdd += 7; // Add a week to get to 2 weeks later
+        }
+        next.setDate(next.getDate() + daysToAdd);
+      } else {
+        next.setDate(next.getDate() + 14);
+      }
       break;
     case 'monthly':
       next.setMonth(next.getMonth() + 1);
@@ -36,6 +62,8 @@ function calculateNextPaymentDate(lastPaymentDate, frequency, frequencyDays, day
       next.setMonth(next.getMonth() + 1);
   }
   
+  // Normalize to midnight
+  next.setHours(0, 0, 0, 0);
   return next;
 }
 
@@ -336,6 +364,11 @@ export async function GET(req) {
     recurringPayments.forEach(rp => {
       let nextDate = rp.nextPaymentDate ? new Date(rp.nextPaymentDate) : null;
       
+      // Normalize nextDate to midnight to avoid timezone issues
+      if (nextDate) {
+        nextDate.setHours(0, 0, 0, 0);
+      }
+      
       // If no next payment date, calculate from last payment
       if (!nextDate && rp.lastPaymentDate) {
         nextDate = calculateNextPaymentDate(
@@ -350,6 +383,7 @@ export async function GET(req) {
       // If still no date, start from today
       if (!nextDate) {
         nextDate = new Date(today);
+        nextDate.setHours(0, 0, 0, 0);
       }
       
       // Generate payments within the forecast window
