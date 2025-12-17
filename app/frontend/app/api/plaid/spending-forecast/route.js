@@ -498,7 +498,7 @@ export async function GET(req) {
     
     // Define category schedules
     const categorySchedules = {
-      'Partying': { type: 'dayOfWeek', days: [4] }, // Thursday (0=Sunday, 4=Thursday)
+      'Partying': { type: 'dayOfWeek', days: [5, 6, 0] }, // Friday, Saturday, Sunday
       'Dining out': { type: 'dayOfWeek', days: [4] }, // Thursday
       'Thrift': { type: 'dayOfWeek', days: [4] }, // Thursday
       'Shopping': { type: 'dayOfWeek', days: [5, 6, 0] }, // Friday, Saturday, Sunday
@@ -509,6 +509,9 @@ export async function GET(req) {
       'Entertainment': { type: 'daily' }, // Every day (spread throughout month)
       'Travel': { type: 'daily' }, // Every day (spread throughout month)
     };
+    
+    // Categories handled by category spending (exclude from transaction patterns)
+    const categorySpendingCategories = Object.keys(categorySchedules);
     
     Object.entries(categorySpendingStats).forEach(([category, stats]) => {
       if (stats.avgMonth <= 0 || stats.monthsActive < 1) return; // Skip if no data
@@ -587,45 +590,48 @@ export async function GET(req) {
     // These supplement recurring payments with actual historical patterns
     
     // Helper function to add income patterns
+    // Income uses actual date (no buffer)
+    // Use average amount, not max, to avoid outliers
     const addIncomePattern = (dateKey, testDate, category, pattern, frequency) => {
-      if (dailyData[dateKey] && new Date(dateKey) >= today) {
-        const forecastAmount = pattern.maxAmount || pattern.amount;
+      // For income, use the actual date, not buffered
+      const actualDateKey = testDate.toISOString().split('T')[0];
+      if (dailyData[actualDateKey] && new Date(actualDateKey) >= today) {
+        // Use average amount, not max, to avoid outliers
+        const forecastAmount = pattern.amount;
         
         const paymentEntry = {
-          id: `pattern-${category}-${testDate.toISOString().split('T')[0]}`,
+          id: `pattern-${category}-${actualDateKey}`,
           name: `${category} (from pattern)`,
           category: category,
           amount: forecastAmount,
-          isVariable: pattern.maxAmount > pattern.amount,
-          amountMin: pattern.amount,
-          amountMax: pattern.maxAmount || pattern.amount,
+          isVariable: false, // Always use average
           frequency: frequency,
-          originalDate: testDate.toISOString().split('T')[0],
-          bufferedDate: dateKey,
+          originalDate: actualDateKey,
+          effectiveDate: actualDateKey,
           source: 'transaction-pattern',
         };
         
-        dailyData[dateKey].income.push(paymentEntry);
-        dailyData[dateKey].totalIncome += forecastAmount;
+        dailyData[actualDateKey].income.push(paymentEntry);
+        dailyData[actualDateKey].totalIncome += forecastAmount;
       }
     };
     
     // Helper function to add expense patterns
+    // Use average amount, not max, to avoid outliers
     const addExpensePattern = (dateKey, testDate, category, pattern, frequency) => {
       if (dailyData[dateKey] && new Date(dateKey) >= today) {
-        const forecastAmount = pattern.maxAmount || pattern.amount;
+        // Use average amount, not max, to avoid outliers
+        const forecastAmount = pattern.amount;
         
         const paymentEntry = {
           id: `pattern-${category}-${testDate.toISOString().split('T')[0]}`,
           name: `${category} (from pattern)`,
           category: category,
           amount: forecastAmount,
-          isVariable: pattern.maxAmount > pattern.amount,
-          amountMin: pattern.amount,
-          amountMax: pattern.maxAmount || pattern.amount,
+          isVariable: false, // Always use average
           frequency: frequency,
           originalDate: testDate.toISOString().split('T')[0],
-          bufferedDate: dateKey,
+          effectiveDate: dateKey,
           source: 'transaction-pattern',
         };
         
@@ -636,10 +642,12 @@ export async function GET(req) {
     
     // Monthly income patterns (e.g., salary)
     // Income uses actual date (no buffer)
+    // Exclude categories already handled by category spending
     Object.entries(transactionPatterns.income.monthly).forEach(([category, pattern]) => {
       const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
+      const isCategorySpending = categorySpendingCategories.includes(category);
       
-      if (!hasRecurringPayment && pattern.count >= 2) {
+      if (!hasRecurringPayment && !isCategorySpending && pattern.count >= 2) {
         let currentDate = new Date(today);
         
         while (currentDate <= endDate) {
@@ -659,10 +667,12 @@ export async function GET(req) {
     
     // Weekly income patterns
     // Income uses actual date (no buffer)
+    // Exclude categories already handled by category spending
     Object.entries(transactionPatterns.income.weekly).forEach(([category, pattern]) => {
       const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
+      const isCategorySpending = categorySpendingCategories.includes(category);
       
-      if (!hasRecurringPayment && pattern.count >= 2) {
+      if (!hasRecurringPayment && !isCategorySpending && pattern.count >= 2) {
         let testDate = new Date(today);
         const daysUntilTarget = (pattern.dayOfWeek - testDate.getDay() + 7) % 7;
         testDate.setDate(testDate.getDate() + (daysUntilTarget === 0 ? 7 : daysUntilTarget));
@@ -680,10 +690,13 @@ export async function GET(req) {
     });
     
     // Monthly expense patterns (e.g., bills that come on the same day each month)
+    // Exclude categories already handled by category spending and Credit Card
     Object.entries(transactionPatterns.expenses.monthly).forEach(([category, pattern]) => {
       const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
+      const isCategorySpending = categorySpendingCategories.includes(category);
+      const isCreditCard = category.toLowerCase().includes('credit card');
       
-      if (!hasRecurringPayment && pattern.count >= 2) {
+      if (!hasRecurringPayment && !isCategorySpending && !isCreditCard && pattern.count >= 2) {
         let currentDate = new Date(today);
         
         while (currentDate <= endDate) {
@@ -702,10 +715,13 @@ export async function GET(req) {
     });
     
     // Weekly expense patterns (e.g., weekly subscriptions)
+    // Exclude categories already handled by category spending and Credit Card
     Object.entries(transactionPatterns.expenses.weekly).forEach(([category, pattern]) => {
       const hasRecurringPayment = recurringPayments.some(rp => rp.category === category);
+      const isCategorySpending = categorySpendingCategories.includes(category);
+      const isCreditCard = category.toLowerCase().includes('credit card');
       
-      if (!hasRecurringPayment && pattern.count >= 2) {
+      if (!hasRecurringPayment && !isCategorySpending && !isCreditCard && pattern.count >= 2) {
         let testDate = new Date(today);
         const daysUntilTarget = (pattern.dayOfWeek - testDate.getDay() + 7) % 7;
         testDate.setDate(testDate.getDate() + (daysUntilTarget === 0 ? 7 : daysUntilTarget));
