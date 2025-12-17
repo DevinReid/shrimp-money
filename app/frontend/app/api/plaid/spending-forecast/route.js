@@ -355,14 +355,16 @@ export async function GET(req) {
       // Generate payments within the forecast window
       while (nextDate <= endDate) {
         if (nextDate >= today) {
-          // For income: use actual date (no buffer - you get paid on the actual date)
+          // For income: use actual date (no buffer - you get paid on the actual date it posts)
           // For expenses: apply 2-day buffer (you need money before the payment posts)
           const isIncome = rp.category === 'Income';
+          // Income uses the exact payment date, expenses use 2 days earlier
           const effectiveDate = isIncome ? nextDate : applyBufferDate(nextDate);
           const dateKey = effectiveDate.toISOString().split('T')[0];
           
           // Only add if date is still within forecast window
-          if (dailyData[dateKey] && effectiveDate >= today) {
+          // For income, ensure we're using the actual payment date (not buffered)
+          if (dailyData[dateKey] && (isIncome ? nextDate >= today : effectiveDate >= today)) {
             // Use max amount for conservative forecasting (as per plan)
             // For variable bills, we use amountMax; for fixed subscriptions, use amount
             const forecastAmount = rp.isVariableAmount && rp.amountMax 
