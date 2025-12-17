@@ -147,11 +147,10 @@ export default function SpendingForecastView() {
               background: 'white',
             }}
           >
-            <option value={7}>7 days</option>
-            <option value={14}>14 days</option>
             <option value={30}>30 days</option>
             <option value={60}>60 days</option>
             <option value={90}>90 days</option>
+            <option value={120}>120 days</option>
           </select>
           
           <button
@@ -465,10 +464,16 @@ export default function SpendingForecastView() {
                     }).map((day, idx) => {
                       const height = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
                       const isNegative = day.runningBalance < 0;
-                      const hasActivity = day.expenses.length > 0 || day.income.length > 0;
                       const hasIncome = day.income.length > 0;
                       const isCritical = criticalDates.some(c => c.date === day.date);
                       const isSelected = selectedDay?.date === day.date;
+                      
+                      // Check if day has recurring payments (not category-spending or transaction-pattern)
+                      const hasRecurring = day.expenses.some(e => 
+                        !e.source || (e.source !== 'category-spending' && e.source !== 'transaction-pattern')
+                      ) || day.income.some(i => 
+                        !i.source || (i.source !== 'category-spending' && i.source !== 'transaction-pattern')
+                      );
                       
                       return (
                         <div
@@ -486,17 +491,17 @@ export default function SpendingForecastView() {
                             height: `${Math.max(height, 2)}%`,
                             background: isNegative 
                               ? 'linear-gradient(180deg, #fca5a5 0%, #ef4444 100%)'
-                              : hasIncome
-                                ? 'linear-gradient(180deg, #86efac 0%, #10b981 100%)'
-                                : isCritical
-                                  ? 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)'
-                                  : hasActivity
-                                    ? 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)'
+                              : hasRecurring
+                                ? 'linear-gradient(180deg, #a5b4fc 0%, #667eea 100%)'
+                                : hasIncome
+                                  ? 'linear-gradient(180deg, #86efac 0%, #10b981 100%)'
+                                  : isCritical
+                                    ? 'linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%)'
                                     : 'linear-gradient(180deg, #d1d5db 0%, #9ca3af 100%)',
                             borderRadius: '2px 2px 0 0',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
-                            opacity: hasActivity ? 1 : 0.5,
+                            opacity: (hasRecurring || hasIncome || day.expenses.length > 0) ? 1 : 0.5,
                             border: isSelected ? '2px solid #667eea' : 'none',
                             boxShadow: isSelected ? '0 0 0 2px rgba(102, 126, 234, 0.2)' : 'none',
                           }}
@@ -509,7 +514,7 @@ export default function SpendingForecastView() {
                           }}
                           onMouseLeave={(e) => {
                             if (!isSelected) {
-                              e.currentTarget.style.opacity = hasActivity ? 1 : 0.5;
+                              e.currentTarget.style.opacity = (hasRecurring || hasIncome || day.expenses.length > 0) ? 1 : 0.5;
                               e.currentTarget.style.transform = 'scale(1)';
                             }
                           }}
@@ -530,12 +535,12 @@ export default function SpendingForecastView() {
                 flexWrap: 'wrap',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px' }} />
-                  <span>Payday</span>
+                  <div style={{ width: '12px', height: '12px', background: '#667eea', borderRadius: '2px' }} />
+                  <span>Recurring Payment</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#667eea', borderRadius: '2px' }} />
-                  <span>Activity Day</span>
+                  <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px' }} />
+                  <span>Payday</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ width: '12px', height: '12px', background: '#f59e0b', borderRadius: '2px' }} />
