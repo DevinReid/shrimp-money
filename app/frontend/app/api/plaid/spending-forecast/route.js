@@ -1060,6 +1060,9 @@ export async function GET(req) {
         current: a.balances.current,
       })),
       recurringPaymentsCount: recurringPayments.length,
+      // Include server's "today" date to ensure client uses the same reference
+      // This prevents timezone mismatches between server and client
+      serverToday: formatLocalDate(today),
       metadata: {
         bufferDays: 2,
         note: 'Expense dates include a 2-day buffer (if a payment posts on Jan 2, you need the money by Dec 31). Income uses actual dates (no buffer).',

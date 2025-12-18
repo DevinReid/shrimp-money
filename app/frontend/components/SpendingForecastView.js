@@ -16,6 +16,7 @@ export default function SpendingForecastView() {
   const [hoveredPayment, setHoveredPayment] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedDayPosition, setSelectedDayPosition] = useState({ x: 0, y: 0 });
+  const [serverToday, setServerToday] = useState(null);
   const { token } = useAuth();
 
   const fetchForecast = async (startBalance = null) => {
@@ -46,6 +47,11 @@ export default function SpendingForecastView() {
         setDailyProjections(data.dailyProjections || []);
         setCriticalDates(data.criticalDates || []);
         setAccounts(data.accounts || []);
+        // Store server's "today" to ensure consistent date calculations
+        // This prevents timezone mismatches between server and client
+        if (data.serverToday) {
+          setServerToday(data.serverToday);
+        }
         
         // DEBUG: Compare netChange calculations and check specific days
         const lastDay = data.dailyProjections?.[data.dailyProjections.length - 1];
@@ -184,20 +190,21 @@ export default function SpendingForecastView() {
 
   // Get days with activity (expenses or income) within the forecast period
   const activeDays = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const maxDays = daysToForecast > 30 ? daysToForecast : 30;
+    // Use server's "today" if available, otherwise fall back to client's today
+    // This ensures consistent date calculations across environments
+    const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
+    todayDate.setHours(0, 0, 0, 0);
     
     // Filter days with activity
-    // Include days from today (daysDiff = 0) through maxDays (inclusive)
+    // Include days from today (daysDiff = 0) through daysToForecast (inclusive)
     // So for 30 days: days 0-30 (31 days total, including today)
     const daysWithActivity = dailyProjections.filter(d => {
       // Use parseLocalDate to avoid timezone issues
       const dayDate = parseLocalDate(d.date);
       dayDate.setHours(0, 0, 0, 0);
-      const daysDiff = Math.floor((dayDate - today) / (1000 * 60 * 60 * 24));
-      // Include today (daysDiff === 0) through day maxDays (inclusive)
-      return daysDiff >= 0 && daysDiff <= maxDays && (d.expenses.length > 0 || d.income.length > 0);
+      const daysDiff = Math.floor((dayDate - todayDate) / (1000 * 60 * 60 * 24));
+      // Include today (daysDiff === 0) through day daysToForecast (inclusive)
+      return daysDiff >= 0 && daysDiff <= daysToForecast && (d.expenses.length > 0 || d.income.length > 0);
     });
     
     // Always include the last day of the forecast period, even if it has no activity
@@ -207,15 +214,15 @@ export default function SpendingForecastView() {
       // Check if last day is within the forecast window
       const lastDayDate = parseLocalDate(lastDay.date);
       lastDayDate.setHours(0, 0, 0, 0);
-      const daysDiff = Math.floor((lastDayDate - today) / (1000 * 60 * 60 * 24));
+      const daysDiff = Math.floor((lastDayDate - todayDate) / (1000 * 60 * 60 * 24));
       // Include if it's within the forecast period (inclusive)
-      if (daysDiff >= 0 && daysDiff <= maxDays) {
+      if (daysDiff >= 0 && daysDiff <= daysToForecast) {
         daysWithActivity.push(lastDay);
       }
     }
     
     return daysWithActivity;
-  }, [dailyProjections, daysToForecast]);
+  }, [dailyProjections, daysToForecast, serverToday]);
   
   // Calculate baseline balance from the first day in the upcoming payments list
   // This ensures the cumulative change shows the change from the beginning of the visible period
@@ -582,19 +589,18 @@ export default function SpendingForecastView() {
                     height: '100%',
                     gap: '1px',
                     padding: '0 5px',
-                    overflowX: daysToForecast > 30 ? 'auto' : 'visible',
-                    minWidth: daysToForecast > 30 ? `${Math.max(daysToForecast * 8, 800)}px` : 'auto',
                   }}>
                     {dailyProjections.filter((day) => {
                       // Show timeline based on forecast period
-                      // Include days from today (daysDiff = 0) through maxDays (inclusive)
+                      // Include days from today (daysDiff = 0) through daysToForecast (inclusive)
                       // So for 30 days: days 0-30 (31 days total, including today)
                       const dayDate = parseLocalDate(day.date);
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      const daysDiff = Math.floor((dayDate - today) / (1000 * 60 * 60 * 24));
-                      const maxDays = daysToForecast > 30 ? daysToForecast : 30;
-                      return daysDiff >= 0 && daysDiff <= maxDays;
+                      // Use server's "today" if available, otherwise fall back to client's today
+                      // This ensures consistent date calculations across environments
+                      const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
+                      todayDate.setHours(0, 0, 0, 0);
+                      const daysDiff = Math.floor((dayDate - todayDate) / (1000 * 60 * 60 * 24));
+                      return daysDiff >= 0 && daysDiff <= daysToForecast;
                     }).map((day, idx) => {
                       const barHeight = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
                       const isNegative = day.runningBalance < 0;
@@ -621,8 +627,6 @@ export default function SpendingForecastView() {
                       const recurringExpenseSegmentPercent = totalActivity > 0 ? (recurringExpenses / totalActivity) * 100 : 0;
                       const otherExpenseSegmentPercent = totalActivity > 0 ? (otherExpenses / totalActivity) * 100 : 0;
                       
-                      const barWidth = daysToForecast > 30 ? '4px' : 'auto';
-                      
                       return (
                         <div
                           key={day.date}
@@ -635,8 +639,8 @@ export default function SpendingForecastView() {
                             setSelectedDay(selectedDay?.date === day.date ? null : day);
                           }}
                           style={{
-                            flex: daysToForecast > 30 ? '0 0 auto' : 1,
-                            width: barWidth,
+                            flex: 1,
+                            minWidth: '2px',
                             height: `${Math.max(barHeight, 2)}%`,
                             position: 'relative',
                             cursor: 'pointer',
@@ -745,11 +749,6 @@ export default function SpendingForecastView() {
                   <div style={{ width: '12px', height: '12px', background: '#f59e0b', borderRadius: '2px' }} />
                   <span>Other Expenses</span>
                 </div>
-                {daysToForecast > 30 && (
-                  <div style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>
-                    Scroll horizontally to see all days
-                  </div>
-                )}
               </div>
             </div>
           )}
