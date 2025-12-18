@@ -338,7 +338,19 @@ export default function RecurringPaymentsView() {
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {
+    // Parse date string as local time to avoid timezone shift
+    // Handle both 'YYYY-MM-DD' and ISO date strings
+    let localDate;
+    if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      // Date-only string: parse as local time
+      const [year, month, day] = dateString.split('-').map(Number);
+      localDate = new Date(year, month - 1, day);
+    } else {
+      // ISO string with time: parse normally but extract date parts
+      const d = new Date(dateString);
+      localDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    return localDate.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

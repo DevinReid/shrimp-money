@@ -6,6 +6,17 @@ const prisma = require('@/lib/prisma');
 const RECURRING_CATEGORIES = ['Income', 'Subscription', 'Bill', 'Credit Card'];
 
 /**
+ * Format a date as YYYY-MM-DD using LOCAL time (not UTC)
+ * This prevents timezone shifts when the server is in a different timezone
+ */
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Calculate next payment date based on frequency
  */
 function calculateNextPaymentDate(lastPaymentDate, frequency, frequencyDays, dayOfMonth, dayOfWeek) {
@@ -293,23 +304,74 @@ export async function GET(req) {
     const paymentsByDate = {};
     
     recurringPayments.forEach(rp => {
-      let nextDate = rp.nextPaymentDate ? new Date(rp.nextPaymentDate) : null;
+      let nextDate = null;
       
-      // If no next payment date, calculate from last payment
-      if (!nextDate && rp.lastPaymentDate) {
-        nextDate = calculateNextPaymentDate(
-          rp.lastPaymentDate,
-          rp.frequency,
-          rp.frequencyDays,
-          rp.dayOfMonth,
-          rp.dayOfWeek
-        );
+      // For WEEKLY payments with dayOfWeek, always find the next occurrence of that day
+      if (rp.frequency === 'weekly' && rp.dayOfWeek !== null && rp.dayOfWeek !== undefined) {
+        // Find the next occurrence of the specified day from today
+        nextDate = new Date(today);
+        const currentDay = nextDate.getDay();
+        const targetDay = parseInt(rp.dayOfWeek);
+        
+        // Calculate days until target day
+        let daysUntilTarget = (targetDay - currentDay + 7) % 7;
+        
+        if (daysUntilTarget === 0) {
+          // Today is the target day, go to next week
+          daysUntilTarget = 7;
+        }
+        
+        nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+        nextDate.setHours(0, 0, 0, 0);
+        
+        // Verify the date is actually on the correct day
+        if (nextDate.getDay() !== targetDay) {
+          // If somehow wrong, recalculate
+          nextDate = new Date(today);
+          daysUntilTarget = (targetDay - nextDate.getDay() + 7) % 7;
+          if (daysUntilTarget === 0) daysUntilTarget = 7;
+          nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+          nextDate.setHours(0, 0, 0, 0);
+        }
+      } else {
+        // For other frequencies, use nextPaymentDate if available
+        nextDate = rp.nextPaymentDate ? new Date(rp.nextPaymentDate) : null;
+        
+        // Normalize nextDate to midnight to avoid timezone issues
+        if (nextDate) {
+          nextDate.setHours(0, 0, 0, 0);
+        }
+        
+        // If no next payment date, calculate from last payment
+        if (!nextDate && rp.lastPaymentDate) {
+          nextDate = calculateNextPaymentDate(
+            rp.lastPaymentDate,
+            rp.frequency,
+            rp.frequencyDays,
+            rp.dayOfMonth,
+            rp.dayOfWeek
+          );
+        }
       }
       
       // Generate upcoming payments
       while (nextDate && nextDate <= futureDate) {
+        // For weekly with dayOfWeek, verify the date matches the specified day
+        if (rp.frequency === 'weekly' && rp.dayOfWeek !== null && rp.dayOfWeek !== undefined) {
+          const actualDay = nextDate.getDay();
+          const targetDay = parseInt(rp.dayOfWeek);
+          if (actualDay !== targetDay) {
+            // Date doesn't match the specified day, recalculate to correct day
+            const daysUntilTarget = (targetDay - actualDay + 7) % 7;
+            const daysToAdd = daysUntilTarget === 0 ? 7 : daysUntilTarget;
+            nextDate.setDate(nextDate.getDate() + daysToAdd);
+            nextDate.setHours(0, 0, 0, 0);
+            continue;
+          }
+        }
+        
         if (nextDate >= today) {
-          const dateKey = nextDate.toISOString().split('T')[0];
+          const dateKey = formatLocalDate(nextDate);
           
           // Use max amount for variable bills (conservative forecasting)
           const forecastAmount = rp.isVariableAmount && rp.amountMax 
@@ -340,13 +402,29 @@ export async function GET(req) {
           }
         }
         
-        nextDate = calculateNextPaymentDate(
-          nextDate,
-          rp.frequency,
-          rp.frequencyDays,
-          rp.dayOfMonth,
-          rp.dayOfWeek
-        );
+        // Calculate next occurrence
+        // For weekly with dayOfWeek, just add 7 days to maintain the same day
+        if (rp.frequency === 'weekly' && rp.dayOfWeek !== null && rp.dayOfWeek !== undefined) {
+          nextDate.setDate(nextDate.getDate() + 7);
+          nextDate.setHours(0, 0, 0, 0);
+          // Verify it's still on the correct day
+          const targetDay = parseInt(rp.dayOfWeek);
+          if (nextDate.getDay() !== targetDay) {
+            // Adjust to correct day if needed
+            const daysUntilTarget = (targetDay - nextDate.getDay() + 7) % 7;
+            nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+            nextDate.setHours(0, 0, 0, 0);
+          }
+        } else {
+          // For other frequencies, use the calculation function
+          nextDate = calculateNextPaymentDate(
+            nextDate,
+            rp.frequency,
+            rp.frequencyDays,
+            rp.dayOfMonth,
+            rp.dayOfWeek
+          );
+        }
       }
     });
     

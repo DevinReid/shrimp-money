@@ -4,6 +4,17 @@ import { readItems, readAccountData, readTransactionData } from '@/lib/plaid';
 const prisma = require('@/lib/prisma');
 
 /**
+ * Format a date as YYYY-MM-DD using LOCAL time (not UTC)
+ * This prevents timezone shifts when the server is in a different timezone
+ */
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Calculate next payment date based on frequency
  */
 function calculateNextPaymentDate(lastPaymentDate, frequency, frequencyDays, dayOfMonth, dayOfWeek) {
@@ -321,7 +332,7 @@ export async function GET(req) {
             name: t.name,
             merchant_name: t.merchantName,
             amount: t.amount,
-            date: t.date.toISOString().split('T')[0],
+            date: formatLocalDate(t.date),
             userCategory: t.userCategory,
             isExpense,
             isIncome,
@@ -347,7 +358,7 @@ export async function GET(req) {
     // Initialize daily projections map
     const dailyData = {};
     for (let d = new Date(today); d <= endDate; d.setDate(d.getDate() + 1)) {
-      const dateKey = d.toISOString().split('T')[0];
+      const dateKey = formatLocalDate(d);
       dailyData[dateKey] = {
         date: dateKey,
         expenses: [],
@@ -364,53 +375,84 @@ export async function GET(req) {
     recurringPayments.forEach(rp => {
       let nextDate = null;
       
-      // For weekly/bi-weekly payments with dayOfWeek, always calculate from today
-      // to ensure we get the correct day of week (ignore nextPaymentDate if it's wrong)
-      if ((rp.frequency === 'weekly' || rp.frequency === 'bi-weekly') && 
-          rp.dayOfWeek !== null && rp.dayOfWeek !== undefined) {
-        // Always find the next occurrence of the specified day from today
-        nextDate = new Date(today);
-        const currentDay = nextDate.getDay();
-        let daysUntilTarget = (rp.dayOfWeek - currentDay + 7) % 7;
+      // DEBUG: Log payment info for Income category
+      if (rp.category === 'Income') {
+        console.log('🔍 INCOME PAYMENT DEBUG:', {
+          name: rp.name,
+          frequency: rp.frequency,
+          dayOfWeek: rp.dayOfWeek,
+          dayOfWeekType: typeof rp.dayOfWeek,
+          nextPaymentDate: rp.nextPaymentDate,
+          lastPaymentDate: rp.lastPaymentDate,
+          todayDay: today.getDay(),
+          todayDate: formatLocalDate(today),
+        });
+      }
+      
+      // For WEEKLY or BI-WEEKLY payments with dayOfWeek, always find the next occurrence of that day
+      if ((rp.frequency === 'weekly' || rp.frequency === 'bi-weekly') && rp.dayOfWeek !== null && rp.dayOfWeek !== undefined) {
+        const targetDay = parseInt(rp.dayOfWeek); // Ensure it's a number
         
-        if (daysUntilTarget === 0) {
-          // Today is the target day, go to next occurrence
-          daysUntilTarget = rp.frequency === 'bi-weekly' ? 14 : 7;
-        } else if (rp.frequency === 'bi-weekly') {
-          // For bi-weekly, we need to find the next bi-weekly occurrence
-          // First, find the next occurrence of the day
-          // Then check if we need to add another week to make it bi-weekly
-          // For simplicity, we'll use calculateNextPaymentDate which handles this
-          if (rp.lastPaymentDate) {
-            // Calculate from last payment to maintain bi-weekly pattern
-            nextDate = calculateNextPaymentDate(
-              rp.lastPaymentDate,
-              rp.frequency,
-              rp.frequencyDays,
-              rp.dayOfMonth,
-              rp.dayOfWeek
-            );
-            // If calculated date is in the past, find next occurrence from today
-            if (nextDate < today) {
-              nextDate = new Date(today);
-              daysUntilTarget = (rp.dayOfWeek - currentDay + 7) % 7;
-              if (daysUntilTarget === 0) {
-                daysUntilTarget = 14;
-              } else {
-                daysUntilTarget += 7; // Add a week to make it bi-weekly
-              }
-              nextDate.setDate(nextDate.getDate() + daysUntilTarget);
-            }
-          } else {
-            // No last payment, just find next occurrence and add a week for bi-weekly
-            daysUntilTarget += 7;
+        // For bi-weekly, try to maintain pattern from lastPaymentDate if available
+        if (rp.frequency === 'bi-weekly' && rp.lastPaymentDate) {
+          const lastDate = new Date(rp.lastPaymentDate);
+          lastDate.setHours(0, 0, 0, 0);
+          
+          // Calculate next bi-weekly date (14 days from last)
+          nextDate = new Date(lastDate);
+          nextDate.setDate(nextDate.getDate() + 14);
+          
+          // If that date is in the past, add another 14 days
+          while (nextDate < today) {
+            nextDate.setDate(nextDate.getDate() + 14);
+          }
+          
+          // Verify it's on the correct day of week
+          if (nextDate.getDay() !== targetDay) {
+            // Adjust to the correct day (should be within 6 days)
+            const daysUntilTarget = (targetDay - nextDate.getDay() + 7) % 7;
             nextDate.setDate(nextDate.getDate() + daysUntilTarget);
           }
+          
+          nextDate.setHours(0, 0, 0, 0);
         } else {
-          // Weekly - just add days until target
+          // For weekly, or bi-weekly without lastPaymentDate, find next occurrence of that day
+          // Find the next occurrence of the specified day from today (INCLUDING today if it matches)
+          nextDate = new Date(today);
+          const currentDay = nextDate.getDay();
+          
+          // Calculate days until target day
+          // If today IS the target day, daysUntilTarget = 0 (include today!)
+          let daysUntilTarget = (targetDay - currentDay + 7) % 7;
+          
+          // DON'T skip today - if today is payday, show it!
+          // daysUntilTarget of 0 means today IS the target day
+          
           nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+          nextDate.setHours(0, 0, 0, 0);
         }
-        nextDate.setHours(0, 0, 0, 0);
+        
+        // DEBUG: Log calculated date for income
+        if (rp.category === 'Income') {
+          console.log(`🔍 ${rp.frequency.toUpperCase()} INCOME CALCULATED:`, {
+            name: rp.name,
+            frequency: rp.frequency,
+            targetDay,
+            todayDay: today.getDay(),
+            calculatedDate: formatLocalDate(nextDate),
+            calculatedDayOfWeek: nextDate.getDay(),
+            lastPaymentDate: rp.lastPaymentDate,
+          });
+        }
+        
+        // Verify the date is actually on the correct day
+        if (nextDate.getDay() !== targetDay) {
+          // If somehow wrong, recalculate
+          nextDate = new Date(today);
+          const daysUntilTarget = (targetDay - nextDate.getDay() + 7) % 7;
+          nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+          nextDate.setHours(0, 0, 0, 0);
+        }
       } else {
         // For other frequencies, use nextPaymentDate if available
         nextDate = rp.nextPaymentDate ? new Date(rp.nextPaymentDate) : null;
@@ -440,17 +482,42 @@ export async function GET(req) {
       
       // Generate payments within the forecast window
       while (nextDate <= endDate) {
-        if (nextDate >= today) {
+        // For WEEKLY with dayOfWeek, verify the date matches the specified day
+        if (rp.frequency === 'weekly' && rp.dayOfWeek !== null && rp.dayOfWeek !== undefined) {
+          const actualDay = nextDate.getDay();
+          const targetDay = parseInt(rp.dayOfWeek);
+          if (actualDay !== targetDay) {
+            // Date doesn't match the specified day, recalculate to correct day
+            const daysUntilTarget = (targetDay - actualDay + 7) % 7;
+            const daysToAdd = daysUntilTarget === 0 ? 7 : daysUntilTarget;
+            nextDate.setDate(nextDate.getDate() + daysToAdd);
+            nextDate.setHours(0, 0, 0, 0);
+            continue;
+          }
+        }
+        
+        // Include today and future dates (>= comparison includes today)
+        const nextDateNormalized = new Date(nextDate);
+        nextDateNormalized.setHours(0, 0, 0, 0);
+        
+        if (nextDateNormalized >= today) {
           // For income: use actual date (no buffer - you get paid on the actual date it posts)
           // For expenses: apply 2-day buffer (you need money before the payment posts)
           const isIncome = rp.category === 'Income';
           // Income uses the exact payment date, expenses use 2 days earlier
           const effectiveDate = isIncome ? nextDate : applyBufferDate(nextDate);
-          const dateKey = effectiveDate.toISOString().split('T')[0];
+          const dateKey = formatLocalDate(effectiveDate);
           
           // Only add if date is still within forecast window
           // For income, ensure we're using the actual payment date (not buffered)
-          if (dailyData[dateKey] && (isIncome ? nextDate >= today : effectiveDate >= today)) {
+          // Explicitly include today by using >= comparison
+          const effectiveDateNormalized = new Date(effectiveDate);
+          effectiveDateNormalized.setHours(0, 0, 0, 0);
+          const isTodayOrFuture = isIncome 
+            ? nextDateNormalized >= today 
+            : effectiveDateNormalized >= today;
+          
+          if (dailyData[dateKey] && isTodayOrFuture) {
             // Use max amount for conservative forecasting (as per plan)
             // For variable bills, we use amountMax; for fixed subscriptions, use amount
             const forecastAmount = rp.isVariableAmount && rp.amountMax 
@@ -467,7 +534,7 @@ export async function GET(req) {
               amountMin: rp.amountMin,
               amountMax: rp.amountMax,
               frequency: rp.frequency,
-              originalDate: nextDate.toISOString().split('T')[0], // Store original date for reference
+              originalDate: formatLocalDate(nextDate), // Store original date for reference
               effectiveDate: dateKey, // Date when money is actually received/needed
             };
             
@@ -482,13 +549,29 @@ export async function GET(req) {
         }
         
         // Calculate next occurrence
-        nextDate = calculateNextPaymentDate(
-          nextDate,
-          rp.frequency,
-          rp.frequencyDays,
-          rp.dayOfMonth,
-          rp.dayOfWeek
-        );
+        // For weekly/bi-weekly with dayOfWeek, add 7 or 14 days to maintain the same day
+        if ((rp.frequency === 'weekly' || rp.frequency === 'bi-weekly') && rp.dayOfWeek !== null && rp.dayOfWeek !== undefined) {
+          const daysToAdd = rp.frequency === 'bi-weekly' ? 14 : 7;
+          nextDate.setDate(nextDate.getDate() + daysToAdd);
+          nextDate.setHours(0, 0, 0, 0);
+          // Verify it's still on the correct day
+          const targetDay = parseInt(rp.dayOfWeek);
+          if (nextDate.getDay() !== targetDay) {
+            // Adjust to correct day if needed
+            const daysUntilTarget = (targetDay - nextDate.getDay() + 7) % 7;
+            nextDate.setDate(nextDate.getDate() + daysUntilTarget);
+            nextDate.setHours(0, 0, 0, 0);
+          }
+        } else {
+          // For other frequencies, use the calculation function
+          nextDate = calculateNextPaymentDate(
+            nextDate,
+            rp.frequency,
+            rp.frequencyDays,
+            rp.dayOfMonth,
+            rp.dayOfWeek
+          );
+        }
       }
     });
 
@@ -620,7 +703,7 @@ export async function GET(req) {
         // Add to every day in forecast period
         let currentDate = new Date(today);
         while (currentDate <= endDate) {
-          const dateKey = currentDate.toISOString().split('T')[0];
+          const dateKey = formatLocalDate(currentDate);
           
           if (dailyData[dateKey]) {
             const categoryEntry = {
@@ -653,7 +736,7 @@ export async function GET(req) {
           const dayOfWeek = currentDate.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
           
           if (schedule.days.includes(dayOfWeek)) {
-            const dateKey = currentDate.toISOString().split('T')[0];
+            const dateKey = formatLocalDate(currentDate);
             
             if (dailyData[dateKey]) {
               const categoryEntry = {
@@ -684,7 +767,7 @@ export async function GET(req) {
     // Use average amount, not max, to avoid outliers
     const addIncomePattern = (dateKey, testDate, category, pattern, frequency) => {
       // For income, use the actual date, not buffered
-      const actualDateKey = testDate.toISOString().split('T')[0];
+      const actualDateKey = formatLocalDate(testDate);
       if (dailyData[actualDateKey] && new Date(actualDateKey) >= today) {
         // Use average amount, not max, to avoid outliers
         const forecastAmount = pattern.amount;
@@ -714,13 +797,13 @@ export async function GET(req) {
         const forecastAmount = pattern.amount;
         
         const paymentEntry = {
-          id: `pattern-${category}-${testDate.toISOString().split('T')[0]}`,
+          id: `pattern-${category}-${formatLocalDate(testDate)}`,
           name: `${category} (from pattern)`,
           category: category,
           amount: forecastAmount,
           isVariable: false, // Always use average
           frequency: frequency,
-          originalDate: testDate.toISOString().split('T')[0],
+          originalDate: formatLocalDate(testDate),
           effectiveDate: dateKey,
           source: 'transaction-pattern',
         };
@@ -746,7 +829,7 @@ export async function GET(req) {
           
           if (testDate >= today && testDate <= endDate) {
             // Income: use actual date, no buffer
-            const dateKey = testDate.toISOString().split('T')[0];
+            const dateKey = formatLocalDate(testDate);
             addIncomePattern(dateKey, testDate, category, pattern, 'monthly');
           }
           
@@ -770,7 +853,7 @@ export async function GET(req) {
         while (testDate <= endDate) {
           if (testDate >= today) {
             // Income: use actual date, no buffer
-            const dateKey = testDate.toISOString().split('T')[0];
+            const dateKey = formatLocalDate(testDate);
             addIncomePattern(dateKey, testDate, category, pattern, 'weekly');
           }
           
@@ -795,7 +878,7 @@ export async function GET(req) {
           
           if (testDate >= today && testDate <= endDate) {
             const bufferedDate = applyBufferDate(testDate);
-            const dateKey = bufferedDate.toISOString().split('T')[0];
+            const dateKey = formatLocalDate(bufferedDate);
             addExpensePattern(dateKey, testDate, category, pattern, 'monthly');
           }
           
@@ -819,7 +902,7 @@ export async function GET(req) {
         while (testDate <= endDate) {
           if (testDate >= today) {
             const bufferedDate = applyBufferDate(testDate);
-            const dateKey = bufferedDate.toISOString().split('T')[0];
+            const dateKey = formatLocalDate(bufferedDate);
             addExpensePattern(dateKey, testDate, category, pattern, 'weekly');
           }
           
@@ -833,7 +916,7 @@ export async function GET(req) {
     const dailyProjections = [];
     const criticalDates = [];
     let lowestBalance = startingBalance;
-    let lowestBalanceDate = today.toISOString().split('T')[0];
+    let lowestBalanceDate = formatLocalDate(today);
     
     Object.keys(dailyData).sort().forEach(dateKey => {
       const day = dailyData[dateKey];
@@ -872,11 +955,85 @@ export async function GET(req) {
     // Calculate summary statistics
     const totalProjectedExpenses = dailyProjections.reduce((sum, d) => sum + d.totalExpenses, 0);
     const totalProjectedIncome = dailyProjections.reduce((sum, d) => sum + d.totalIncome, 0);
+    const calculatedNetChange = totalProjectedIncome - totalProjectedExpenses;
+    const calculatedEndingBalance = startingBalance + calculatedNetChange;
     
     // Calculate minimum balance needed to stay positive
     const minimumRequired = lowestBalance < 0 
       ? Math.abs(lowestBalance) + startingBalance 
       : 0;
+    
+    // DEBUG: Compare calculations
+    const lastDay = dailyProjections[dailyProjections.length - 1];
+    console.log('🔍 NET CHANGE CALCULATION COMPARISON:', {
+      startingBalance,
+      endingBalance: runningBalance,
+      calculatedEndingBalance,
+      difference: runningBalance - calculatedEndingBalance,
+      netChangeFromSum: calculatedNetChange,
+      netChangeFromBalance: runningBalance - startingBalance,
+      lastDayDate: lastDay?.date,
+      lastDayRunningBalance: lastDay?.runningBalance,
+      totalProjectedIncome,
+      totalProjectedExpenses,
+    });
+
+    // DEBUG: Verify today is included in calculations
+    const todayKey = formatLocalDate(today);
+    const todayData = dailyProjections.find(d => d.date === todayKey);
+    if (todayData) {
+      console.log('📊 TODAY INCLUDED IN FORECAST:', {
+        date: todayKey,
+        income: todayData.totalIncome,
+        expenses: todayData.totalExpenses,
+        netChange: todayData.netChange,
+        runningBalance: todayData.runningBalance,
+      });
+    } else {
+      console.log('⚠️ WARNING: Today not found in dailyProjections!', {
+        todayKey,
+        firstProjection: dailyProjections[0]?.date,
+        lastProjection: dailyProjections[dailyProjections.length - 1]?.date,
+      });
+    }
+    
+    // DEBUG: Check specific dates that user is seeing issues with
+    const jan14 = dailyProjections.find(d => d.date === '2026-01-14');
+    const jan15 = dailyProjections.find(d => d.date === '2026-01-15');
+    
+    if (jan14) {
+      const jan14Cumulative = jan14.runningBalance - startingBalance;
+      console.log('🔍 JAN 14 BACKEND DATA:', {
+        date: jan14.date,
+        runningBalance: jan14.runningBalance,
+        startingBalance: startingBalance,
+        cumulativeChange: jan14Cumulative,
+        totalIncome: jan14.totalIncome,
+        totalExpenses: jan14.totalExpenses,
+        netChange: jan14.netChange,
+        incomeCount: jan14.income.length,
+        expenseCount: jan14.expenses.length,
+      });
+    } else {
+      console.log('⚠️ JAN 14 NOT FOUND in dailyProjections');
+    }
+    
+    if (jan15) {
+      const jan15Cumulative = jan15.runningBalance - startingBalance;
+      console.log('🔍 JAN 15 BACKEND DATA:', {
+        date: jan15.date,
+        runningBalance: jan15.runningBalance,
+        startingBalance: startingBalance,
+        cumulativeChange: jan15Cumulative,
+        totalIncome: jan15.totalIncome,
+        totalExpenses: jan15.totalExpenses,
+        netChange: jan15.netChange,
+        incomeCount: jan15.income.length,
+        expenseCount: jan15.expenses.length,
+      });
+    } else {
+      console.log('⚠️ JAN 15 NOT FOUND in dailyProjections');
+    }
 
     return NextResponse.json({
       success: true,
@@ -888,7 +1045,9 @@ export async function GET(req) {
         minimumRequired: Math.round(minimumRequired * 100) / 100,
         totalProjectedExpenses: Math.round(totalProjectedExpenses * 100) / 100,
         totalProjectedIncome: Math.round(totalProjectedIncome * 100) / 100,
-        netChange: Math.round((totalProjectedIncome - totalProjectedExpenses) * 100) / 100,
+        // Use endingBalance - startingBalance for netChange to ensure consistency with cumulative calculations
+        // This matches what users see in the cumulative change display
+        netChange: Math.round((runningBalance - startingBalance) * 100) / 100,
         daysForecasted: daysToForecast,
       },
       dailyProjections,

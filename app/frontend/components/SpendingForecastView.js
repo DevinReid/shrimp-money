@@ -46,6 +46,67 @@ export default function SpendingForecastView() {
         setDailyProjections(data.dailyProjections || []);
         setCriticalDates(data.criticalDates || []);
         setAccounts(data.accounts || []);
+        
+        // DEBUG: Compare netChange calculations and check specific days
+        const lastDay = data.dailyProjections?.[data.dailyProjections.length - 1];
+        const cumulativeFromLastDay = lastDay ? lastDay.runningBalance - data.forecast.startingBalance : 0;
+        const netChangeFromEnding = data.forecast.endingBalance - data.forecast.startingBalance;
+        
+        // Check Jan 14 and Jan 15 specifically
+        const jan14 = data.dailyProjections?.find(d => d.date === '2026-01-14');
+        const jan15 = data.dailyProjections?.find(d => d.date === '2026-01-15');
+        
+        console.log('🔍 FRONTEND NET CHANGE COMPARISON:', {
+          netChangeFromAPI: data.forecast.netChange,
+          cumulativeFromLastDay,
+          netChangeFromEnding,
+          endingBalance: data.forecast.endingBalance,
+          startingBalance: data.forecast.startingBalance,
+          lastDayDate: lastDay?.date,
+          lastDayRunningBalance: lastDay?.runningBalance,
+          difference: data.forecast.netChange - cumulativeFromLastDay,
+        });
+        
+        if (jan14) {
+          const jan14Cumulative = jan14.runningBalance - data.forecast.startingBalance;
+          console.log('🔍 JAN 14 DEBUG:', {
+            date: jan14.date,
+            runningBalance: jan14.runningBalance,
+            startingBalance: data.forecast.startingBalance,
+            cumulativeChange: jan14Cumulative,
+            totalIncome: jan14.totalIncome,
+            totalExpenses: jan14.totalExpenses,
+            netChange: jan14.netChange,
+          });
+        }
+        
+        if (jan15) {
+          const jan15Cumulative = jan15.runningBalance - data.forecast.startingBalance;
+          console.log('🔍 JAN 15 DEBUG:', {
+            date: jan15.date,
+            runningBalance: jan15.runningBalance,
+            startingBalance: data.forecast.startingBalance,
+            cumulativeChange: jan15Cumulative,
+            totalIncome: jan15.totalIncome,
+            totalExpenses: jan15.totalExpenses,
+            netChange: jan15.netChange,
+          });
+        }
+        
+        // Check if last day in upcoming payments matches the ending balance
+        const lastActiveDay = data.dailyProjections?.[data.dailyProjections.length - 1];
+        if (lastActiveDay) {
+          const lastDayCumulative = lastActiveDay.runningBalance - data.forecast.startingBalance;
+          console.log('🔍 LAST DAY vs NET CHANGE:', {
+            lastDayDate: lastActiveDay.date,
+            lastDayRunningBalance: lastActiveDay.runningBalance,
+            endingBalance: data.forecast.endingBalance,
+            startingBalance: data.forecast.startingBalance,
+            lastDayCumulative,
+            netChangeFromAPI: data.forecast.netChange,
+            difference: data.forecast.netChange - lastDayCumulative,
+          });
+        }
       }
     } catch (err) {
       console.error('Error fetching forecast:', err);
@@ -68,12 +129,28 @@ export default function SpendingForecastView() {
     }).format(amount);
   };
 
+  // Parse date string as local time to avoid timezone shift
+  // '2025-12-24' should display as Dec 24, not Dec 23
+  const parseLocalDate = (dateString) => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day); // month is 0-indexed
+  };
+
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const localDate = parseLocalDate(dateString);
+    return localDate.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
     });
+  };
+
+  // Format date as YYYY-MM-DD in local time
+  const formatLocalDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const handleWhatIfApply = () => {
@@ -109,14 +186,58 @@ export default function SpendingForecastView() {
   const activeDays = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return dailyProjections.filter(d => {
-      const dayDate = new Date(d.date);
+    const maxDays = daysToForecast > 30 ? daysToForecast : 30;
+    
+    // Filter days with activity
+    // Include days from today (daysDiff = 0) through maxDays (inclusive)
+    // So for 30 days: days 0-30 (31 days total, including today)
+    const daysWithActivity = dailyProjections.filter(d => {
+      // Use parseLocalDate to avoid timezone issues
+      const dayDate = parseLocalDate(d.date);
       dayDate.setHours(0, 0, 0, 0);
       const daysDiff = Math.floor((dayDate - today) / (1000 * 60 * 60 * 24));
-      const maxDays = daysToForecast > 30 ? daysToForecast : 30;
-      return daysDiff >= 0 && daysDiff < maxDays && (d.expenses.length > 0 || d.income.length > 0);
+      // Include today (daysDiff === 0) through day maxDays (inclusive)
+      return daysDiff >= 0 && daysDiff <= maxDays && (d.expenses.length > 0 || d.income.length > 0);
     });
+    
+    // Always include the last day of the forecast period, even if it has no activity
+    // This ensures the cumulative change matches the "Net Change" at the top
+    const lastDay = dailyProjections[dailyProjections.length - 1];
+    if (lastDay && !daysWithActivity.find(d => d.date === lastDay.date)) {
+      // Check if last day is within the forecast window
+      const lastDayDate = parseLocalDate(lastDay.date);
+      lastDayDate.setHours(0, 0, 0, 0);
+      const daysDiff = Math.floor((lastDayDate - today) / (1000 * 60 * 60 * 24));
+      // Include if it's within the forecast period (inclusive)
+      if (daysDiff >= 0 && daysDiff <= maxDays) {
+        daysWithActivity.push(lastDay);
+      }
+    }
+    
+    return daysWithActivity;
   }, [dailyProjections, daysToForecast]);
+  
+  // Calculate baseline balance from the first day in the upcoming payments list
+  // This ensures the cumulative change shows the change from the beginning of the visible period
+  // The last day's cumulative change will then match the total change across the visible period
+  const baselineBalance = useMemo(() => {
+    if (activeDays.length > 0 && dailyProjections.length > 0) {
+      const firstActiveDate = activeDays[0].date;
+      const firstDayIndex = dailyProjections.findIndex(d => d.date === firstActiveDate);
+      
+      if (firstDayIndex >= 0) {
+        // Use the running balance of the day BEFORE the first active day as the baseline
+        // This way, the cumulative change shows change from the start of the visible period
+        if (firstDayIndex > 0) {
+          return dailyProjections[firstDayIndex - 1].runningBalance;
+        } else {
+          // First day in projections, use starting balance
+          return forecast?.startingBalance || 0;
+        }
+      }
+    }
+    return forecast?.startingBalance || 0;
+  }, [activeDays, dailyProjections, forecast]);
 
   if (loading && !forecast) {
     return (
@@ -465,13 +586,15 @@ export default function SpendingForecastView() {
                     minWidth: daysToForecast > 30 ? `${Math.max(daysToForecast * 8, 800)}px` : 'auto',
                   }}>
                     {dailyProjections.filter((day) => {
-                      // Show timeline based on forecast period, but cap at 30 days for display
-                      const dayDate = new Date(day.date);
+                      // Show timeline based on forecast period
+                      // Include days from today (daysDiff = 0) through maxDays (inclusive)
+                      // So for 30 days: days 0-30 (31 days total, including today)
+                      const dayDate = parseLocalDate(day.date);
                       const today = new Date();
                       today.setHours(0, 0, 0, 0);
                       const daysDiff = Math.floor((dayDate - today) / (1000 * 60 * 60 * 24));
                       const maxDays = daysToForecast > 30 ? daysToForecast : 30;
-                      return daysDiff >= 0 && daysDiff < maxDays;
+                      return daysDiff >= 0 && daysDiff <= maxDays;
                     }).map((day, idx) => {
                       const barHeight = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
                       const isNegative = day.runningBalance < 0;
@@ -522,7 +645,10 @@ export default function SpendingForecastView() {
                             border: isSelected ? '2px solid #667eea' : 'none',
                             boxShadow: isSelected ? '0 0 0 2px rgba(102, 126, 234, 0.2)' : 'none',
                           }}
-                          title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}\nRecurring Income: ${formatCurrency(recurringIncome)}\nRecurring Expenses: ${formatCurrency(recurringExpenses)}\nOther Expenses: ${formatCurrency(otherExpenses)}`}
+                          title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}\nCumulative Change: ${(() => {
+                            const cumulativeChange = day.runningBalance - baselineBalance;
+                            return (cumulativeChange >= 0 ? '+' : '') + formatCurrency(cumulativeChange);
+                          })()}\nRecurring Income: ${formatCurrency(recurringIncome)}\nRecurring Expenses: ${formatCurrency(recurringExpenses)}\nOther Expenses: ${formatCurrency(otherExpenses)}`}
                           onMouseEnter={(e) => {
                             if (!isSelected) {
                               e.currentTarget.style.opacity = '0.8';
@@ -691,7 +817,7 @@ export default function SpendingForecastView() {
                   }}>
                     <div>
                       <div style={{ fontWeight: '600', fontSize: '16px' }}>
-                        {new Date(selectedDay.date).toLocaleDateString('en-US', {
+                        {parseLocalDate(selectedDay.date).toLocaleDateString('en-US', {
                           weekday: 'long',
                           month: 'long',
                           day: 'numeric',
@@ -964,22 +1090,44 @@ export default function SpendingForecastView() {
                           <span style={{ marginLeft: '8px' }}>⚡</span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: '15px', fontSize: '13px' }}>
-                        {day.totalIncome > 0 && (
-                          <span style={{ color: '#10b981', fontWeight: '600' }}>
-                            +{formatCurrency(day.totalIncome)}
-                          </span>
-                        )}
-                        {day.totalExpenses > 0 && (
-                          <span style={{ color: '#ef4444', fontWeight: '600' }}>
-                            -{formatCurrency(day.totalExpenses)}
-                          </span>
-                        )}
+                      <div style={{ display: 'flex', gap: '15px', fontSize: '13px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          {day.totalIncome > 0 && (
+                            <span style={{ color: '#10b981', fontWeight: '600' }}>
+                              +{formatCurrency(day.totalIncome)}
+                            </span>
+                          )}
+                          {day.totalExpenses > 0 && (
+                            <span style={{ color: '#ef4444', fontWeight: '600' }}>
+                              -{formatCurrency(day.totalExpenses)}
+                            </span>
+                          )}
+                        </div>
                         <span style={{ 
                           color: day.runningBalance >= 0 ? '#667eea' : '#ef4444',
                           fontWeight: '500',
                         }}>
                           → {formatCurrency(day.runningBalance)}
+                        </span>
+                        <span style={{ 
+                          color: '#d1d5db',
+                          margin: '0 5px',
+                        }}>|</span>
+                        <span style={{ 
+                          color: (() => {
+                            // Calculate cumulative change from starting balance
+                            // This ensures the last day's cumulative change matches the "Net Change" at the top
+                            const cumulativeChange = day.runningBalance - baselineBalance;
+                            return cumulativeChange >= 0 ? '#10b981' : '#ef4444';
+                          })(),
+                          fontWeight: '600',
+                          fontSize: '14px',
+                        }}>
+                          {(() => {
+                            // Calculate cumulative change from starting balance
+                            const cumulativeChange = day.runningBalance - baselineBalance;
+                            return (cumulativeChange >= 0 ? '+' : '') + formatCurrency(cumulativeChange);
+                          })()}
                         </span>
                       </div>
                     </div>
