@@ -11,7 +11,16 @@ export default function SpendingForecastView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [daysToForecast, setDaysToForecast] = useState(30);
+  const [viewMode, setViewMode] = useState('fromNow'); // 'fromNow' or 'monthly'
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    // Initialize to current month
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+  const [monthsToView, setMonthsToView] = useState(1); // 1, 2, 3, 6, 12, 24
   const [customBalance, setCustomBalance] = useState('');
+  const [minimumBalance, setMinimumBalance] = useState(1000); // Minimum balance to maintain
+  const [forecastMode, setForecastMode] = useState('average'); // 'average' or 'max'
   const [showWhatIf, setShowWhatIf] = useState(false);
   const [hoveredPayment, setHoveredPayment] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
@@ -24,9 +33,29 @@ export default function SpendingForecastView() {
       setLoading(true);
       setError(null);
       
-      let url = `/api/plaid/spending-forecast?days=${daysToForecast}`;
+      // Calculate days based on view mode
+      let daysToFetch = daysToForecast;
+      if (viewMode === 'monthly') {
+        // For monthly view, fetch enough days to cover the selected month range
+        // Calculate days from today to end of last month in range
+        const today = serverToday ? parseLocalDate(serverToday) : new Date();
+        today.setHours(0, 0, 0, 0);
+        const monthEnd = new Date(selectedMonth.year, selectedMonth.month + monthsToView, 0); // Last day of last month in range
+        monthEnd.setHours(0, 0, 0, 0);
+        const daysFromToday = Math.ceil((monthEnd - today) / (1000 * 60 * 60 * 24));
+        
+        // Always fetch enough days to reach the end of the selected month range
+        // This will include the previous month's last day if it's after today
+        // Fetch at least 90 days to ensure we have enough data, or more for longer ranges
+        daysToFetch = Math.max(daysFromToday + 1, Math.max(90, monthsToView * 35));
+      }
+      
+      let url = `/api/plaid/spending-forecast?days=${daysToFetch}`;
       if (startBalance) {
         url += `&startBalance=${startBalance}`;
+      }
+      if (forecastMode === 'max') {
+        url += `&useMax=true`;
       }
       
       const response = await fetch(url, {
@@ -126,7 +155,7 @@ export default function SpendingForecastView() {
     if (token) {
       fetchForecast();
     }
-  }, [token, daysToForecast]);
+  }, [token, daysToForecast, viewMode, selectedMonth, monthsToView, forecastMode]);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
@@ -157,6 +186,84 @@ export default function SpendingForecastView() {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+
+  // Get period description for display
+  const getPeriodDescription = () => {
+    if (viewMode === 'monthly') {
+      const firstMonth = new Date(selectedMonth.year, selectedMonth.month, 1);
+      const lastMonth = new Date(selectedMonth.year, selectedMonth.month + monthsToView - 1, 1);
+      
+      if (monthsToView === 1) {
+        return firstMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      } else {
+        const firstMonthName = firstMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        const lastMonthName = lastMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        return `${firstMonthName} - ${lastMonthName}`;
+      }
+    }
+    if (daysToForecast === 7) return '1 week';
+    if (daysToForecast === 14) return '2 weeks';
+    return `${daysToForecast} days`;
+  };
+
+  // Navigate to previous month
+  const goToPreviousMonth = () => {
+    setSelectedMonth(prev => {
+      if (prev.month === 0) {
+        return { year: prev.year - 1, month: 11 };
+      }
+      return { year: prev.year, month: prev.month - 1 };
+    });
+  };
+
+  // Navigate to next month
+  const goToNextMonth = () => {
+    setSelectedMonth(prev => {
+      if (prev.month === 11) {
+        return { year: prev.year + 1, month: 0 };
+      }
+      return { year: prev.year, month: prev.month + 1 };
+    });
+  };
+
+  // Get first and last day of selected month range
+  const getMonthBounds = () => {
+    const firstDay = new Date(selectedMonth.year, selectedMonth.month, 1);
+    // Calculate last day based on number of months to view
+    const lastDay = new Date(selectedMonth.year, selectedMonth.month + monthsToView, 0);
+    return {
+      firstDay: formatLocalDate(firstDay),
+      lastDay: formatLocalDate(lastDay),
+    };
+  };
+
+  // Check if selected month is the current month (first month in range)
+  const isCurrentMonth = () => {
+    const today = serverToday ? parseLocalDate(serverToday) : new Date();
+    return selectedMonth.year === today.getFullYear() && 
+           selectedMonth.month === today.getMonth();
+  };
+
+  // Get the last day of the previous month
+  const getPreviousMonthLastDay = () => {
+    const prevMonth = new Date(selectedMonth.year, selectedMonth.month, 0); // Day 0 = last day of previous month
+    return formatLocalDate(prevMonth);
+  };
+
+  // Check if selected month range includes the current month
+  const includesCurrentMonth = () => {
+    const today = serverToday ? parseLocalDate(serverToday) : new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    
+    for (let i = 0; i < monthsToView; i++) {
+      const checkMonth = new Date(selectedMonth.year, selectedMonth.month + i, 1);
+      if (checkMonth.getFullYear() === currentYear && checkMonth.getMonth() === currentMonth) {
+        return true;
+      }
+    }
+    return false;
   };
 
   const handleWhatIfApply = () => {
@@ -190,6 +297,30 @@ export default function SpendingForecastView() {
 
   // Get days with activity (expenses or income) within the forecast period
   const activeDays = useMemo(() => {
+    if (viewMode === 'monthly') {
+      // For monthly mode, show all days in the selected month with activity
+      const { firstDay, lastDay } = getMonthBounds();
+      const daysWithActivity = dailyProjections.filter(d => {
+        return d.date >= firstDay && d.date <= lastDay && (d.expenses.length > 0 || d.income.length > 0);
+      });
+      
+      // Always include the first day of the month if it exists, even if it has no activity
+      const firstDayInMonth = dailyProjections.find(d => d.date === firstDay);
+      if (firstDayInMonth && !daysWithActivity.find(d => d.date === firstDay)) {
+        daysWithActivity.unshift(firstDayInMonth);
+      }
+      
+      // Always include the last day of the month if it exists, even if it has no activity
+      const lastDayInMonth = dailyProjections.find(d => d.date === lastDay);
+      if (lastDayInMonth && !daysWithActivity.find(d => d.date === lastDay)) {
+        daysWithActivity.push(lastDayInMonth);
+      }
+      
+      // Sort by date to ensure proper order
+      return daysWithActivity.sort((a, b) => a.date.localeCompare(b.date));
+    }
+    
+    // For "From Now" mode, use existing logic
     // Use server's "today" if available, otherwise fall back to client's today
     // This ensures consistent date calculations across environments
     const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
@@ -222,12 +353,53 @@ export default function SpendingForecastView() {
     }
     
     return daysWithActivity;
-  }, [dailyProjections, daysToForecast, serverToday]);
+  }, [dailyProjections, daysToForecast, viewMode, serverToday, selectedMonth]);
   
   // Calculate baseline balance from the first day in the upcoming payments list
   // This ensures the cumulative change shows the change from the beginning of the visible period
   // The last day's cumulative change will then match the total change across the visible period
   const baselineBalance = useMemo(() => {
+    if (viewMode === 'monthly') {
+      // For monthly mode, check if the range includes the current month or starts in the future
+      if (includesCurrentMonth()) {
+        // Current month: use the balance at the start of the month (day before first day)
+        const { firstDay } = getMonthBounds();
+        const firstDayIndex = dailyProjections.findIndex(d => d.date === firstDay);
+        
+        if (firstDayIndex >= 0 && firstDayIndex > 0) {
+          // Use the running balance of the day BEFORE the first day of the month
+          return dailyProjections[firstDayIndex - 1].runningBalance;
+        } else if (firstDayIndex === 0) {
+          // First day of month is the first day in projections, use starting balance
+          return forecast?.startingBalance || 0;
+        } else {
+          // Month starts before projections, use starting balance
+          return forecast?.startingBalance || 0;
+        }
+      } else {
+        // Future month: use the ending balance from the previous month
+        const previousMonthLastDay = getPreviousMonthLastDay();
+        const previousMonthLastDayData = dailyProjections.find(d => d.date === previousMonthLastDay);
+        
+        if (previousMonthLastDayData) {
+          // Use the running balance from the last day of the previous month
+          return previousMonthLastDayData.runningBalance;
+        } else {
+          // Previous month not in projections, try to find the day before the first day of selected month
+          const { firstDay } = getMonthBounds();
+          const firstDayIndex = dailyProjections.findIndex(d => d.date === firstDay);
+          
+          if (firstDayIndex >= 0 && firstDayIndex > 0) {
+            return dailyProjections[firstDayIndex - 1].runningBalance;
+          } else {
+            // Fallback to starting balance
+            return forecast?.startingBalance || 0;
+          }
+        }
+      }
+    }
+    
+    // For "From Now" mode, use existing logic
     if (activeDays.length > 0 && dailyProjections.length > 0) {
       const firstActiveDate = activeDays[0].date;
       const firstDayIndex = dailyProjections.findIndex(d => d.date === firstActiveDate);
@@ -244,7 +416,129 @@ export default function SpendingForecastView() {
       }
     }
     return forecast?.startingBalance || 0;
-  }, [activeDays, dailyProjections, forecast]);
+  }, [activeDays, dailyProjections, forecast, viewMode, selectedMonth, monthsToView, serverToday]);
+
+  // Calculate net change for the visible period (month range or days)
+  // Use the same calculation method for both views: sum daily net changes
+  const visibleNetChange = useMemo(() => {
+    if (!forecast || !dailyProjections.length) return 0;
+    
+    if (viewMode === 'monthly') {
+      // For monthly mode, sum up all daily net changes in the selected month range
+      const { firstDay, lastDay } = getMonthBounds();
+      const netChange = dailyProjections
+        .filter(d => d.date >= firstDay && d.date <= lastDay)
+        .reduce((sum, d) => sum + (d.netChange || 0), 0);
+      
+      return netChange;
+    }
+    
+    // For "From Now" mode, sum daily net changes for the selected period
+    // This ensures consistency with monthly mode
+    const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    
+    const netChange = dailyProjections
+      .filter(d => {
+        const dayDate = parseLocalDate(d.date);
+        dayDate.setHours(0, 0, 0, 0);
+        const daysDiff = Math.floor((dayDate - todayDate) / (1000 * 60 * 60 * 24));
+        return daysDiff >= 0 && daysDiff <= daysToForecast;
+      })
+      .reduce((sum, d) => sum + (d.netChange || 0), 0);
+    
+    return netChange;
+  }, [forecast, dailyProjections, viewMode, selectedMonth, monthsToView, daysToForecast, serverToday]);
+
+  // Calculate total income and expenses for visible period
+  // Use the same calculation method for both views: sum daily values
+  const visibleIncome = useMemo(() => {
+    if (viewMode === 'monthly') {
+      const { firstDay, lastDay } = getMonthBounds();
+      return dailyProjections
+        .filter(d => d.date >= firstDay && d.date <= lastDay)
+        .reduce((sum, d) => sum + d.totalIncome, 0);
+    }
+    
+    // For "From Now" mode, sum daily income for the selected period
+    const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    
+    return dailyProjections
+      .filter(d => {
+        const dayDate = parseLocalDate(d.date);
+        dayDate.setHours(0, 0, 0, 0);
+        const daysDiff = Math.floor((dayDate - todayDate) / (1000 * 60 * 60 * 24));
+        return daysDiff >= 0 && daysDiff <= daysToForecast;
+      })
+      .reduce((sum, d) => sum + d.totalIncome, 0);
+  }, [dailyProjections, viewMode, selectedMonth, monthsToView, daysToForecast, serverToday]);
+
+  const visibleExpenses = useMemo(() => {
+    if (viewMode === 'monthly') {
+      const { firstDay, lastDay } = getMonthBounds();
+      return dailyProjections
+        .filter(d => d.date >= firstDay && d.date <= lastDay)
+        .reduce((sum, d) => sum + d.totalExpenses, 0);
+    }
+    
+    // For "From Now" mode, sum daily expenses for the selected period
+    const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    
+    return dailyProjections
+      .filter(d => {
+        const dayDate = parseLocalDate(d.date);
+        dayDate.setHours(0, 0, 0, 0);
+        const daysDiff = Math.floor((dayDate - todayDate) / (1000 * 60 * 60 * 24));
+        return daysDiff >= 0 && daysDiff <= daysToForecast;
+      })
+      .reduce((sum, d) => sum + d.totalExpenses, 0);
+  }, [dailyProjections, viewMode, selectedMonth, monthsToView, daysToForecast, serverToday]);
+
+  // Calculate ending balance for the visible period
+  // Use the same calculation method for both views: baseline + net change
+  const visibleEndingBalance = useMemo(() => {
+    if (!forecast || !dailyProjections.length) return forecast?.endingBalance || 0;
+    
+    // For both modes, calculate as: baseline balance + net change for the period
+    return baselineBalance + visibleNetChange;
+  }, [baselineBalance, visibleNetChange]);
+
+  // Calculate lowest balance in the visible period
+  const visibleLowestBalance = useMemo(() => {
+    if (!dailyProjections.length) return baselineBalance;
+    
+    if (viewMode === 'monthly') {
+      const { firstDay, lastDay } = getMonthBounds();
+      const balances = dailyProjections
+        .filter(d => d.date >= firstDay && d.date <= lastDay)
+        .map(d => d.runningBalance);
+      return balances.length > 0 ? Math.min(...balances, baselineBalance) : baselineBalance;
+    }
+    
+    // For "From Now" mode, find lowest balance in the period
+    const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    
+    const balances = dailyProjections
+      .filter(d => {
+        const dayDate = parseLocalDate(d.date);
+        dayDate.setHours(0, 0, 0, 0);
+        const daysDiff = Math.floor((dayDate - todayDate) / (1000 * 60 * 60 * 24));
+        return daysDiff >= 0 && daysDiff <= daysToForecast;
+      })
+      .map(d => d.runningBalance);
+    
+    return balances.length > 0 ? Math.min(...balances, baselineBalance) : baselineBalance;
+  }, [dailyProjections, viewMode, selectedMonth, monthsToView, daysToForecast, serverToday, baselineBalance]);
+
+  // Calculate safe amount to remove (for savings, etc.)
+  // This is the lowest balance minus the minimum balance threshold
+  const safeAmountToRemove = useMemo(() => {
+    const safeAmount = visibleLowestBalance - minimumBalance;
+    return Math.max(0, safeAmount); // Don't allow negative values
+  }, [visibleLowestBalance, minimumBalance]);
 
   if (loading && !forecast) {
     return (
@@ -268,7 +562,108 @@ export default function SpendingForecastView() {
           </p>
         </div>
         
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Forecast Mode Toggle (Average vs Max) */}
+          <div style={{ 
+            display: 'flex', 
+            gap: '4px', 
+            background: '#f3f4f6', 
+            padding: '4px', 
+            borderRadius: '8px',
+            border: '1px solid #e5e7eb',
+          }}>
+            <button
+              onClick={() => setForecastMode('average')}
+              style={{
+                padding: '6px 12px',
+                background: forecastMode === 'average' ? 'white' : 'transparent',
+                color: forecastMode === 'average' ? '#667eea' : '#6b7280',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: forecastMode === 'average' ? '600' : '400',
+                boxShadow: forecastMode === 'average' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                transition: 'all 0.2s',
+              }}
+              title="Use average spending amounts"
+            >
+              Average
+            </button>
+            <button
+              onClick={() => setForecastMode('max')}
+              style={{
+                padding: '6px 12px',
+                background: forecastMode === 'max' ? 'white' : 'transparent',
+                color: forecastMode === 'max' ? '#667eea' : '#6b7280',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: forecastMode === 'max' ? '600' : '400',
+                boxShadow: forecastMode === 'max' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                transition: 'all 0.2s',
+              }}
+              title="Use maximum spending amounts (most conservative)"
+            >
+              Max
+            </button>
+          </div>
+          
+          {/* View Mode Toggle */}
+          <div style={{ 
+            display: 'flex', 
+            gap: '4px', 
+            background: '#f3f4f6', 
+            padding: '4px', 
+            borderRadius: '8px',
+            border: '1px solid #e5e7eb',
+          }}>
+            <button
+              onClick={() => {
+                setViewMode('fromNow');
+              }}
+              style={{
+                padding: '6px 12px',
+                background: viewMode === 'fromNow' ? 'white' : 'transparent',
+                color: viewMode === 'fromNow' ? '#667eea' : '#6b7280',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: viewMode === 'fromNow' ? '600' : '400',
+                boxShadow: viewMode === 'fromNow' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                transition: 'all 0.2s',
+              }}
+            >
+              From Now
+            </button>
+            <button
+              onClick={() => {
+                setViewMode('monthly');
+                // Reset to current month when switching to monthly mode
+                const now = new Date();
+                setSelectedMonth({ year: now.getFullYear(), month: now.getMonth() });
+              }}
+              style={{
+                padding: '6px 12px',
+                background: viewMode === 'monthly' ? 'white' : 'transparent',
+                color: viewMode === 'monthly' ? '#667eea' : '#6b7280',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: viewMode === 'monthly' ? '600' : '400',
+                boxShadow: viewMode === 'monthly' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                transition: 'all 0.2s',
+              }}
+            >
+              Monthly
+            </button>
+          </div>
+          
+          {/* Period Selector */}
+          {viewMode === 'fromNow' ? (
           <select
             value={daysToForecast}
             onChange={(e) => {
@@ -283,11 +678,85 @@ export default function SpendingForecastView() {
               background: 'white',
             }}
           >
+              <option value={7}>1 week</option>
+              <option value={14}>2 weeks</option>
             <option value={30}>30 days</option>
             <option value={60}>60 days</option>
             <option value={90}>90 days</option>
             <option value={120}>120 days</option>
           </select>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <select
+                value={monthsToView}
+                onChange={(e) => {
+                  setMonthsToView(parseInt(e.target.value));
+                }}
+                style={{
+                  padding: '8px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  background: 'white',
+                }}
+              >
+                <option value={1}>1 month</option>
+                <option value={2}>2 months</option>
+                <option value={3}>3 months</option>
+                <option value={6}>6 months</option>
+                <option value={12}>12 months</option>
+                <option value={24}>24 months</option>
+              </select>
+              <button
+                onClick={goToPreviousMonth}
+                style={{
+                  padding: '8px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '16px',
+                  background: 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#6b7280',
+                }}
+                title="Previous period"
+              >
+                ←
+              </button>
+              <div style={{
+                padding: '8px 16px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px',
+                background: 'white',
+                fontWeight: '600',
+                minWidth: '200px',
+                textAlign: 'center',
+              }}>
+                {getPeriodDescription()}
+              </div>
+              <button
+                onClick={goToNextMonth}
+                style={{
+                  padding: '8px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '16px',
+                  background: 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#6b7280',
+                }}
+                title="Next period"
+              >
+                →
+              </button>
+            </div>
+          )}
           
           <button
             onClick={() => setShowWhatIf(!showWhatIf)}
@@ -439,16 +908,27 @@ export default function SpendingForecastView() {
             }}>
               <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>Starting Balance</div>
               <div style={{ fontSize: '28px', fontWeight: '700' }}>
-                {formatCurrency(forecast.startingBalance)}
+                {formatCurrency(
+                  viewMode === 'monthly' && !includesCurrentMonth() 
+                    ? baselineBalance 
+                    : forecast.startingBalance
+                )}
               </div>
               <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
-                {accounts.length} account{accounts.length !== 1 ? 's' : ''}
+                {viewMode === 'monthly' && !includesCurrentMonth() 
+                  ? (() => {
+                      const prevMonthDate = new Date(selectedMonth.year, selectedMonth.month, 0);
+                      const prevMonthName = prevMonthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                      return `From end of ${prevMonthName}`;
+                    })()
+                  : `${accounts.length} account${accounts.length !== 1 ? 's' : ''}`
+                }
               </div>
             </div>
             
             <div style={{
               padding: '20px',
-              background: forecast.endingBalance >= 0 
+              background: visibleEndingBalance >= 0 
                 ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
                 : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
               borderRadius: '12px',
@@ -456,10 +936,16 @@ export default function SpendingForecastView() {
             }}>
               <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>Projected End Balance</div>
               <div style={{ fontSize: '28px', fontWeight: '700' }}>
-                {formatCurrency(forecast.endingBalance)}
+                {formatCurrency(visibleEndingBalance)}
               </div>
               <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
-                After {daysToForecast} days
+                {viewMode === 'monthly' 
+                  ? (monthsToView === 1 
+                      ? `End of ${getPeriodDescription()}`
+                      : `Through ${getPeriodDescription()}`
+                    )
+                  : `After ${getPeriodDescription()}`
+                }
               </div>
             </div>
             
@@ -490,12 +976,52 @@ export default function SpendingForecastView() {
               <div style={{ 
                 fontSize: '28px', 
                 fontWeight: '700',
-                color: forecast.netChange >= 0 ? '#10b981' : '#ef4444',
+                color: visibleNetChange >= 0 ? '#10b981' : '#ef4444',
               }}>
-                {forecast.netChange >= 0 ? '+' : ''}{formatCurrency(forecast.netChange)}
+                {visibleNetChange >= 0 ? '+' : ''}{formatCurrency(visibleNetChange)}
               </div>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '5px' }}>
-                {formatCurrency(forecast.totalProjectedIncome)} in / {formatCurrency(forecast.totalProjectedExpenses)} out
+                {formatCurrency(visibleIncome)} in / {formatCurrency(visibleExpenses)} out
+              </div>
+            </div>
+            
+            <div style={{
+              padding: '20px',
+              background: safeAmountToRemove > 0 
+                ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+                : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              borderRadius: '12px',
+              color: 'white',
+            }}>
+              <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>
+                Safe to Remove
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: '700' }}>
+                {formatCurrency(safeAmountToRemove)}
+              </div>
+              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+                {safeAmountToRemove > 0 
+                  ? `Maintain ${formatCurrency(minimumBalance)} minimum`
+                  : `Lowest: ${formatCurrency(visibleLowestBalance)}`
+                }
+              </div>
+              <div style={{ marginTop: '10px', fontSize: '11px', opacity: 0.9 }}>
+                <input
+                  type="number"
+                  value={minimumBalance}
+                  onChange={(e) => setMinimumBalance(Math.max(0, parseFloat(e.target.value) || 0))}
+                  placeholder="1000"
+                  style={{
+                    width: '80px',
+                    padding: '4px 8px',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '4px',
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    color: 'white',
+                    fontSize: '12px',
+                  }}
+                />
+                <span style={{ marginLeft: '8px' }}>min balance</span>
               </div>
             </div>
           </div>
@@ -591,7 +1117,13 @@ export default function SpendingForecastView() {
                     padding: '0 5px',
                   }}>
                     {dailyProjections.filter((day) => {
-                      // Show timeline based on forecast period
+                      if (viewMode === 'monthly') {
+                        // For monthly mode, show all days in the selected month
+                        const { firstDay, lastDay } = getMonthBounds();
+                        return day.date >= firstDay && day.date <= lastDay;
+                      }
+                      
+                      // For "From Now" mode, show timeline based on forecast period
                       // Include days from today (daysDiff = 0) through daysToForecast (inclusive)
                       // So for 30 days: days 0-30 (31 days total, including today)
                       const dayDate = parseLocalDate(day.date);
@@ -1054,7 +1586,7 @@ export default function SpendingForecastView() {
                 📅 Upcoming Payments
               </h3>
               <p style={{ margin: '5px 0 0', fontSize: '13px', color: '#6b7280' }}>
-                Expenses and income for the next {daysToForecast} days
+                Expenses and income for the next {getPeriodDescription()}
               </p>
             </div>
             

@@ -225,6 +225,7 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const daysToForecast = parseInt(searchParams.get('days') || '30', 10);
     const customStartBalance = searchParams.get('startBalance');
+    const useMax = searchParams.get('useMax') === 'true'; // Use max spending instead of average
     
     // Get current account balance from Plaid data
     let startingBalance = 0;
@@ -696,8 +697,9 @@ export async function GET(req) {
       let frequency;
       
       if (schedule.type === 'daily') {
-        // Calculate daily amount (monthly average / days per month)
-        forecastAmount = stats.avgMonth / daysPerMonth;
+        // Calculate daily amount (monthly average or max / days per month)
+        const monthlyAmount = useMax ? stats.maxMonth : stats.avgMonth;
+        forecastAmount = monthlyAmount / daysPerMonth;
         frequency = 'daily';
         
         // Add to every day in forecast period
@@ -724,9 +726,10 @@ export async function GET(req) {
         }
       } else if (schedule.type === 'dayOfWeek') {
         // Calculate amount per occurrence
-        // For weekly categories: monthly average / (weeks per month * occurrences per week)
+        // For weekly categories: monthly average or max / (weeks per month * occurrences per week)
         const occurrencesPerWeek = schedule.days.length;
-        const weeklyAmount = stats.avgMonth / (weeksPerMonth * occurrencesPerWeek);
+        const monthlyAmount = useMax ? stats.maxMonth : stats.avgMonth;
+        const weeklyAmount = monthlyAmount / (weeksPerMonth * occurrencesPerWeek);
         forecastAmount = weeklyAmount;
         frequency = 'weekly';
         
