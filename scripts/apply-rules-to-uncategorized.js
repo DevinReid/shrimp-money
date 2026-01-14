@@ -1,48 +1,78 @@
-import { NextResponse } from 'next/server';
-import { requireMFA } from '@/lib/middleware/auth';
-import { readItems } from '@/lib/plaid';
-const prisma = require('@/lib/prisma');
+#!/usr/bin/env node
 
 /**
- * POST /api/plaid/rules/apply
- * Apply categorization rules to uncategorized transactions
+ * Apply categorization rules to all uncategorized transactions
+ * 
+ * This script backfills categorization for all existing uncategorized transactions
+ * that match active rules. Useful for one-time backfill operations.
+ * 
+ * Usage: node scripts/apply-rules-to-uncategorized.js
  */
-export async function POST(req) {
-  const authResult = requireMFA(req);
-  
-  if (authResult.error) {
-    return NextResponse.json(
-      { error: authResult.error, requiresMFA: authResult.requiresMFA },
-      { status: authResult.status }
-    );
-  }
+
+const path = require('path');
+const { PrismaClient } = require('@prisma/client');
+
+// Colors for console output
+const colors = {
+  reset: '\x1b[0m',
+  red: '\x1b[31m',
+  yellow: '\x1b[33m',
+  green: '\x1b[32m',
+  blue: '\x1b[34m',
+  cyan: '\x1b[36m',
+};
+
+function log(message, color = 'reset') {
+  console.log(`${colors[color]}${message}${colors.reset}`);
+}
+
+// Load environment variables (if dotenv is available)
+try {
+  require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
+  require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+} catch (e) {
+  // dotenv not available, assume env vars are set externally
+}
+
+async function main() {
+  const prisma = new PrismaClient();
 
   try {
-    if (!prisma || !prisma.plaidCategorizationRule || !prisma.plaidTransactionData) {
-      return NextResponse.json(
-        { error: 'Database not available. Run: npx prisma db push && npx prisma generate' },
-        { status: 500 }
-      );
+    log('\n' + '='.repeat(60), 'cyan');
+    log('🚀 Applying Rules to Uncategorized Transactions', 'cyan');
+    log('='.repeat(60) + '\n', 'cyan');
+
+    // Check database connection
+    await prisma.$connect();
+    log('✅ Connected to database\n', 'green');
+
+    // Get Plaid items
+    const fs = require('fs');
+    const itemsPath = path.join(__dirname, '..', 'app', 'frontend', 'lib', 'plaid_items.json');
+    
+    if (!fs.existsSync(itemsPath)) {
+      log('❌ Plaid items file not found. Please link an account first.', 'red');
+      process.exit(1);
     }
 
-    // Get the current item
-    const itemsData = await readItems();
+    const itemsData = JSON.parse(fs.readFileSync(itemsPath, 'utf8'));
     const currentEnv = process.env.PLAID_ENV || 'sandbox';
+    
     const matchingItems = itemsData.items.filter(item => {
       if (!item.environment) return currentEnv === 'sandbox';
       return item.environment === currentEnv;
     });
 
     if (matchingItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No Plaid items found' },
-        { status: 404 }
-      );
+      log('❌ No Plaid items found for the current environment', 'red');
+      process.exit(1);
     }
 
     const item = matchingItems.sort((a, b) => 
       new Date(b.created_at) - new Date(a.created_at)
     )[0];
+
+    log(`📦 Using Plaid item: ${item.item_id} (${currentEnv})\n`, 'blue');
 
     // Get all active rules
     const rules = await prisma.plaidCategorizationRule.findMany({
@@ -51,13 +81,11 @@ export async function POST(req) {
     });
 
     if (rules.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: 'No rules defined',
-        applied: 0,
-        suggested: 0,
-      });
+      log('⚠️  No active rules found. Create some rules first!', 'yellow');
+      process.exit(0);
     }
+
+    log(`📋 Found ${rules.length} active rule(s)\n`, 'blue');
 
     // Get transactions
     const transactionData = await prisma.plaidTransactionData.findUnique({
@@ -65,18 +93,20 @@ export async function POST(req) {
     });
 
     if (!transactionData || !transactionData.transactions) {
-      return NextResponse.json({
-        success: true,
-        message: 'No transactions found',
-        applied: 0,
-        suggested: 0,
-      });
+      log('❌ No transactions found', 'red');
+      process.exit(1);
     }
 
     const transactions = transactionData.transactions;
-    let applied = 0;
-    let suggested = 0;
-    const updatedTransactions = [];
+    const uncategorizedCount = transactions.filter(t => !t.userCategory).length;
+    
+    log(`📊 Total transactions: ${transactions.length}`, 'blue');
+    log(`📊 Uncategorized: ${uncategorizedCount}\n`, uncategorizedCount > 0 ? 'yellow' : 'green');
+
+    if (uncategorizedCount === 0) {
+      log('✅ All transactions are already categorized!', 'green');
+      process.exit(0);
+    }
 
     // Helper to check if a transaction matches a rule
     const matchesRule = (transaction, rule) => {
@@ -129,10 +159,8 @@ export async function POST(req) {
       // If rule has matchAmounts, check that the transaction amount matches one of them
       if (rule.matchAmounts && Array.isArray(rule.matchAmounts) && rule.matchAmounts.length > 0) {
         const transactionAmount = Math.abs(transaction.amount || 0);
-        // Check if transaction amount matches any of the specified amounts
         const matchesAmount = rule.matchAmounts.some(ruleAmount => {
           const amount = Math.abs(ruleAmount);
-          // Allow for small floating point differences (within 1 cent)
           return Math.abs(transactionAmount - amount) <= 0.01;
         });
         
@@ -145,6 +173,12 @@ export async function POST(req) {
     };
 
     // Process each transaction
+    let applied = 0;
+    let suggested = 0;
+    const updatedTransactions = [];
+
+    log('🔄 Processing transactions...\n', 'cyan');
+
     for (const transaction of transactions) {
       // Skip if already categorized
       if (transaction.userCategory) {
@@ -170,7 +204,7 @@ export async function POST(req) {
             autoAppliedRule: matchedRule.id,
           });
           
-          // Also save to the category table
+          // Save to the category table
           try {
             await prisma.plaidTransactionCategory.upsert({
               where: { transactionId: transaction.transaction_id },
@@ -183,7 +217,7 @@ export async function POST(req) {
             });
             
             // ALSO sync to the normalized PlaidTransaction table
-            if (prisma && prisma.plaidTransaction) {
+            if (prisma.plaidTransaction) {
               try {
                 await prisma.plaidTransaction.updateMany({
                   where: { transactionId: transaction.transaction_id },
@@ -194,11 +228,11 @@ export async function POST(req) {
               }
             }
           } catch (e) {
-            console.log('Could not save category:', e.message);
+            log(`⚠️  Could not save category for ${transaction.transaction_id}: ${e.message}`, 'yellow');
           }
           
           applied++;
-          console.log(`✅ Auto-applied "${matchedRule.category}" to "${transaction.name}"`);
+          log(`  ✅ "${matchedRule.category}" → "${transaction.name}"`, 'green');
         } else {
           // Create a suggestion
           updatedTransactions.push({
@@ -224,11 +258,11 @@ export async function POST(req) {
               },
             });
           } catch (e) {
-            console.log('Could not save suggestion:', e.message);
+            log(`⚠️  Could not save suggestion for ${transaction.transaction_id}: ${e.message}`, 'yellow');
           }
           
           suggested++;
-          console.log(`💡 Suggested "${matchedRule.category}" for "${transaction.name}"`);
+          log(`  💡 Suggested "${matchedRule.category}" for "${transaction.name}"`, 'yellow');
         }
       } else {
         updatedTransactions.push(transaction);
@@ -246,17 +280,33 @@ export async function POST(req) {
       });
     }
 
-    return NextResponse.json({
-      success: true,
-      applied,
-      suggested,
-      total: transactions.length,
-      message: `Applied ${applied} categories, suggested ${suggested} for review`,
-    });
+    // Summary
+    log('\n' + '='.repeat(60), 'cyan');
+    log('📊 Summary', 'cyan');
+    log('='.repeat(60), 'cyan');
+    log(`✅ Auto-categorized: ${applied} transaction${applied !== 1 ? 's' : ''}`, applied > 0 ? 'green' : 'reset');
+    log(`💡 Suggested for review: ${suggested} transaction${suggested !== 1 ? 's' : ''}`, suggested > 0 ? 'yellow' : 'reset');
+    log(`📊 Total processed: ${transactions.length}`, 'blue');
+    log(`📊 Remaining uncategorized: ${transactions.length - applied - suggested - (transactions.length - uncategorizedCount)}`, 'blue');
+    log('='.repeat(60) + '\n', 'cyan');
+
+    if (applied > 0 || suggested > 0) {
+      log('✅ Rules applied successfully!', 'green');
+    } else {
+      log('ℹ️  No transactions matched any rules.', 'yellow');
+    }
 
   } catch (error) {
-    console.error('Error applying rules:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    log(`\n❌ Error: ${error.message}`, 'red');
+    console.error(error);
+    process.exit(1);
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
+if (require.main === module) {
+  main();
+}
+
+module.exports = { main };

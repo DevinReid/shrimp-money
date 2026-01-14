@@ -31,6 +31,8 @@ export default function RecurringPaymentsView() {
   const [expandedMerchant, setExpandedMerchant] = useState(null); // Which merchant's transactions are expanded
   const [linkModalPosition, setLinkModalPosition] = useState({ x: 0, y: 0 }); // Position for link modal
   const [calculatedModalPosition, setCalculatedModalPosition] = useState({ left: 0, top: 0 }); // Calculated position for modal
+  const [dailyWeekendEstimates, setDailyWeekendEstimates] = useState(null); // Daily and weekend estimates data
+  const [loadingEstimates, setLoadingEstimates] = useState(false);
   const { token } = useAuth();
 
   // Form state
@@ -265,9 +267,144 @@ export default function RecurringPaymentsView() {
     }
   };
 
+  // Fetch daily/weekend estimates from forecast
+  const fetchDailyWeekendEstimates = async () => {
+    try {
+      setLoadingEstimates(true);
+      const response = await fetch('/api/plaid/spending-forecast?days=90', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        console.error('Error fetching estimates:', data.error);
+        return;
+      }
+
+      if (data.success && data.dailyProjections) {
+        // Calculate daily and weekend estimates
+        const dailyEstimates = {};
+        const weekendEstimates = {};
+        
+        // Process 30 days of data to calculate monthly averages
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const thirtyDaysLater = new Date(today);
+        thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+        
+        let totalDaily = 0;
+        let totalWeekend = 0;
+        let dailyDays = 0;
+        let weekendDays = 0;
+        
+        data.dailyProjections.forEach(day => {
+          const dayDate = new Date(day.date);
+          dayDate.setHours(0, 0, 0, 0);
+          
+          if (dayDate >= today && dayDate <= thirtyDaysLater) {
+            // Get expenses with source 'category-spending'
+            const categoryExpenses = day.expenses.filter(e => 
+              e.source === 'category-spending'
+            );
+            
+            const dayOfWeek = dayDate.getDay(); // 0 = Sunday, 6 = Saturday
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            
+            // Calculate daily expenses (frequency === 'daily')
+            const dailyAmount = categoryExpenses.reduce((sum, e) => {
+              if (e.frequency === 'daily') {
+                return sum + e.amount;
+              }
+              return sum;
+            }, 0);
+            
+            // Calculate weekend expenses (frequency === 'weekly' on weekends)
+            const weekendAmount = isWeekend ? categoryExpenses.reduce((sum, e) => {
+              if (e.frequency === 'weekly') {
+                return sum + e.amount;
+              }
+              return sum;
+            }, 0) : 0;
+            
+            // Group by category for daily estimates
+            categoryExpenses.forEach(e => {
+              if (e.frequency === 'daily') {
+                if (!dailyEstimates[e.category]) {
+                  dailyEstimates[e.category] = { amount: 0, count: 0 };
+                }
+                dailyEstimates[e.category].amount += e.amount;
+                dailyEstimates[e.category].count += 1;
+              }
+            });
+            
+            // Group by category for weekend estimates (only on weekends)
+            if (isWeekend) {
+              categoryExpenses.forEach(e => {
+                if (e.frequency === 'weekly') {
+                  if (!weekendEstimates[e.category]) {
+                    weekendEstimates[e.category] = { amount: 0, count: 0 };
+                  }
+                  weekendEstimates[e.category].amount += e.amount;
+                  weekendEstimates[e.category].count += 1;
+                }
+              });
+            }
+            
+            totalDaily += dailyAmount;
+            totalWeekend += weekendAmount;
+            if (dailyAmount > 0) dailyDays++;
+            if (weekendAmount > 0) weekendDays++;
+          }
+        });
+        
+        // Calculate monthly totals (multiply daily by 30, weekend by ~8-9 weekends per month)
+        const daysPerMonth = 30;
+        const weekendsPerMonth = 8.5; // Average weekends per month
+        
+        const monthlyDailyTotal = (totalDaily / Math.max(dailyDays, 1)) * daysPerMonth;
+        const monthlyWeekendTotal = (totalWeekend / Math.max(weekendDays, 1)) * weekendsPerMonth;
+        
+        // Calculate monthly totals per category
+        const monthlyDailyByCategory = {};
+        const monthlyWeekendByCategory = {};
+        
+        Object.entries(dailyEstimates).forEach(([category, data]) => {
+          const avgDaily = data.amount / Math.max(data.count, 1);
+          monthlyDailyByCategory[category] = avgDaily * daysPerMonth;
+        });
+        
+        Object.entries(weekendEstimates).forEach(([category, data]) => {
+          const avgWeekend = data.amount / Math.max(data.count, 1);
+          monthlyWeekendByCategory[category] = avgWeekend * weekendsPerMonth;
+        });
+        
+        setDailyWeekendEstimates({
+          daily: {
+            total: monthlyDailyTotal,
+            byCategory: monthlyDailyByCategory,
+            perDay: totalDaily / Math.max(dailyDays, 1),
+          },
+          weekend: {
+            total: monthlyWeekendTotal,
+            byCategory: monthlyWeekendByCategory,
+            perWeekend: totalWeekend / Math.max(weekendDays, 1),
+          },
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching daily/weekend estimates:', err);
+    } finally {
+      setLoadingEstimates(false);
+    }
+  };
+
   useEffect(() => {
     if (token) {
       fetchRecurringPayments();
+      fetchDailyWeekendEstimates();
     }
   }, [token]);
 
@@ -582,6 +719,20 @@ export default function RecurringPaymentsView() {
     return acc;
   }, {});
 
+  // Calculate total monthly expenses including daily/weekend estimates
+  const totalMonthlyExpensesWithEstimates = useMemo(() => {
+    if (!summary) return 0;
+    return summary.totalMonthlyExpenses + 
+      (dailyWeekendEstimates?.daily.total || 0) + 
+      (dailyWeekendEstimates?.weekend.total || 0);
+  }, [summary, dailyWeekendEstimates]);
+
+  // Calculate net monthly (income - total expenses including estimates)
+  const netMonthlyWithEstimates = useMemo(() => {
+    if (!summary) return 0;
+    return summary.totalMonthlyIncome - totalMonthlyExpensesWithEstimates;
+  }, [summary, totalMonthlyExpensesWithEstimates]);
+
   if (loading && recurringPayments.length === 0) {
     return (
       <div style={{ padding: '20px', textAlign: 'center' }}>
@@ -684,9 +835,31 @@ export default function RecurringPaymentsView() {
             </div>
           </div>
           
+          {/* Total Expenses with Estimates Card */}
           <div style={{
             padding: '20px',
-            background: summary.netMonthly >= 0 
+            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            borderRadius: '12px',
+            color: 'white',
+          }}>
+            <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '5px' }}>Total Monthly Expenses</div>
+            <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              {formatCurrency(totalMonthlyExpensesWithEstimates)}
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              {formatCurrency(summary.totalMonthlyExpenses)} recurring
+              {dailyWeekendEstimates && (
+                <>
+                  <br />
+                  + {formatCurrency((dailyWeekendEstimates.daily.total || 0) + (dailyWeekendEstimates.weekend.total || 0))} estimates
+                </>
+              )}
+            </div>
+          </div>
+          
+          <div style={{
+            padding: '20px',
+            background: netMonthlyWithEstimates >= 0 
               ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
               : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
             borderRadius: '12px',
@@ -694,10 +867,10 @@ export default function RecurringPaymentsView() {
           }}>
             <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '5px' }}>Net Monthly</div>
             <div style={{ fontSize: '28px', fontWeight: '700' }}>
-              {summary.netMonthly >= 0 ? '+' : ''}{formatCurrency(summary.netMonthly)}
+              {netMonthlyWithEstimates >= 0 ? '+' : ''}{formatCurrency(netMonthlyWithEstimates)}
             </div>
             <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
-              {summary.totalRecurring} total payments
+              {formatCurrency(summary.totalMonthlyIncome)} in - {formatCurrency(totalMonthlyExpensesWithEstimates)} out
             </div>
           </div>
 
@@ -734,6 +907,7 @@ export default function RecurringPaymentsView() {
           { id: 'subscriptions', label: `📺 Subscriptions`, category: 'Subscription' },
           { id: 'bills', label: `📄 Bills`, category: 'Bill' },
           { id: 'credit-cards', label: `💳 Credit Cards`, category: 'Credit Card' },
+          { id: 'estimates', label: `📊 Daily/Weekend Estimates` },
         ].map(tab => (
           <button
             key={tab.id}
@@ -2339,6 +2513,232 @@ export default function RecurringPaymentsView() {
           </div>
         );
       })()}
+
+      {/* Daily/Weekend Estimates Tab */}
+      {activeTab === 'estimates' && (
+        <div>
+          <div style={{
+            padding: '15px',
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            fontSize: '14px',
+            color: '#1e40af',
+          }}>
+            <strong>💡 Daily & Weekend Estimates:</strong> These are estimated expenses calculated from your historical spending patterns. 
+            Daily estimates are spread across every day of the month, while weekend estimates are applied on Saturdays and Sundays.
+            These supplement your recurring payments in the spending forecast.
+          </div>
+
+          {loadingEstimates ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+              Loading estimates...
+            </div>
+          ) : !dailyWeekendEstimates ? (
+            <div style={{
+              padding: '40px',
+              textAlign: 'center',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+            }}>
+              <p style={{ color: '#6b7280' }}>
+                No daily/weekend estimates available yet.
+              </p>
+              <p style={{ color: '#6b7280', fontSize: '14px', marginTop: '10px' }}>
+                Estimates are calculated from your categorized transaction history. Make sure you have transactions categorized.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '20px' }}>
+              {/* Daily Estimates Section */}
+              <div style={{
+                padding: '20px',
+                background: 'white',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', margin: 0 }}>
+                    📅 Daily Estimates
+                  </h3>
+                  <div style={{
+                    padding: '8px 16px',
+                    background: '#f0fdf4',
+                    borderRadius: '8px',
+                    border: '1px solid #bbf7d0',
+                  }}>
+                    <div style={{ fontSize: '12px', color: '#166534', marginBottom: '4px' }}>Monthly Total</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>
+                      {formatCurrency(dailyWeekendEstimates.daily.total)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                      ~{formatCurrency(dailyWeekendEstimates.daily.perDay)} per day
+                    </div>
+                  </div>
+                </div>
+                
+                {Object.keys(dailyWeekendEstimates.daily.byCategory).length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>
+                    No daily estimates configured
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    {Object.entries(dailyWeekendEstimates.daily.byCategory)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([category, monthlyTotal]) => (
+                        <div
+                          key={category}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 15px',
+                            background: '#f9fafb',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px' }}>
+                              {category}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                              Applied every day
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>
+                              {formatCurrency(monthlyTotal)}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                              {formatCurrency(monthlyTotal / 30)} / day
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Weekend Estimates Section */}
+              <div style={{
+                padding: '20px',
+                background: 'white',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', margin: 0 }}>
+                    🎉 Weekend Estimates
+                  </h3>
+                  <div style={{
+                    padding: '8px 16px',
+                    background: '#fef3c7',
+                    borderRadius: '8px',
+                    border: '1px solid #fde68a',
+                  }}>
+                    <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Monthly Total</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>
+                      {formatCurrency(dailyWeekendEstimates.weekend.total)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                      ~{formatCurrency(dailyWeekendEstimates.weekend.perWeekend)} per weekend
+                    </div>
+                  </div>
+                </div>
+                
+                {Object.keys(dailyWeekendEstimates.weekend.byCategory).length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>
+                    No weekend estimates configured
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    {Object.entries(dailyWeekendEstimates.weekend.byCategory)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([category, monthlyTotal]) => (
+                        <div
+                          key={category}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 15px',
+                            background: '#f9fafb',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px' }}>
+                              {category}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                              Applied on Saturdays & Sundays
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>
+                              {formatCurrency(monthlyTotal)}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                              {formatCurrency(monthlyTotal / 8.5)} / weekend
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Summary */}
+              <div style={{
+                padding: '20px',
+                background: 'linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%)',
+                borderRadius: '12px',
+                border: '2px solid #667eea',
+              }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '15px', color: '#4338ca' }}>
+                  📊 Total Impact
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '5px' }}>Recurring Expenses</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827' }}>
+                      {formatCurrency(summary?.totalMonthlyExpenses || 0)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '5px' }}>Daily Estimates</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>
+                      +{formatCurrency(dailyWeekendEstimates.daily.total)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '5px' }}>Weekend Estimates</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>
+                      +{formatCurrency(dailyWeekendEstimates.weekend.total)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '5px' }}>Total Monthly Expenses</div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>
+                      {formatCurrency(
+                        (summary?.totalMonthlyExpenses || 0) + 
+                        dailyWeekendEstimates.daily.total + 
+                        dailyWeekendEstimates.weekend.total
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

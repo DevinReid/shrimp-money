@@ -318,7 +318,7 @@ export async function POST(req) {
       const trimmedCategory = category.trim();
       const isCustom = !PREDEFINED_CATEGORIES.includes(trimmedCategory);
 
-      // Bulk update selected transactions
+      // Bulk update selected transactions in PlaidTransactionCategory table
       const updatePromises = transactionsToCategorize.map(transaction =>
         prisma.plaidTransactionCategory.upsert({
           where: { transactionId: transaction.transaction_id },
@@ -336,6 +336,20 @@ export async function POST(req) {
       );
 
       await Promise.all(updatePromises);
+
+      // ALSO sync categories to the normalized PlaidTransaction table
+      if (prisma && prisma.plaidTransaction) {
+        try {
+          const transactionIds = transactionsToCategorize.map(t => t.transaction_id);
+          await prisma.plaidTransaction.updateMany({
+            where: { transactionId: { in: transactionIds } },
+            data: { userCategory: trimmedCategory },
+          });
+          console.log(`✅ Synced ${transactionIds.length} categories to PlaidTransaction table`);
+        } catch (syncError) {
+          console.log(`⚠️ Could not sync categories to PlaidTransaction table: ${syncError.message}`);
+        }
+      }
 
       return NextResponse.json({
         success: true,

@@ -56,6 +56,21 @@ async function main() {
           continue;
         }
 
+        // Get user category if it exists
+        let userCategory = null;
+        if (prisma && prisma.plaidTransactionCategory) {
+          try {
+            const category = await prisma.plaidTransactionCategory.findUnique({
+              where: { transactionId: txn.transaction_id },
+            });
+            if (category) {
+              userCategory = category.category;
+            }
+          } catch (catError) {
+            // Category lookup failed, continue without it
+          }
+        }
+
         // Extract data
         const transactionData = {
           transactionId: txn.transaction_id,
@@ -68,6 +83,7 @@ async function main() {
           isoCurrencyCode: txn.iso_currency_code || null,
           pending: txn.pending || false,
           transactionCode: txn.transaction_code || null,
+          userCategory: userCategory, // Include user category if available
           rawData: JSON.parse(JSON.stringify(txn)), // Store full original data
         };
 
@@ -89,6 +105,31 @@ async function main() {
     }
     if (totalErrors > 0) {
       console.log(`   ⚠️  ${totalErrors} errors`);
+    }
+    
+    // Also sync categories for existing transactions
+    if (prisma && prisma.plaidTransactionCategory) {
+      try {
+        console.log(`\n🔄 Syncing categories for existing transactions...`);
+        const allCategories = await prisma.plaidTransactionCategory.findMany();
+        let categoriesSynced = 0;
+        
+        for (const cat of allCategories) {
+          try {
+            await prisma.plaidTransaction.updateMany({
+              where: { transactionId: cat.transactionId },
+              data: { userCategory: cat.category },
+            });
+            categoriesSynced++;
+          } catch (updateError) {
+            // Transaction might not exist in normalized table yet, skip
+          }
+        }
+        
+        console.log(`   ✅ Synced ${categoriesSynced} categories to normalized table`);
+      } catch (syncError) {
+        console.warn(`   ⚠️  Could not sync categories: ${syncError.message}`);
+      }
     }
   }
 

@@ -22,6 +22,7 @@ export default function PlaidApp() {
   const [accessToken, setAccessToken] = useState(null);
   const [accounts, setAccounts] = useState(null);
   const [transactions, setTransactions] = useState(null);
+  const [uncategorizedCount, setUncategorizedCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'recurring', 'uncategorized', 'all-transactions', 'vendor-rules', or 'options'
@@ -323,11 +324,37 @@ export default function PlaidApp() {
     return [...transactions.transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [transactions?.transactions, activeTab]);
 
-  // Calculate uncategorized transaction count
-  const uncategorizedCount = useMemo(() => {
-    if (!transactions?.transactions) return 0;
-    return transactions.transactions.filter(t => !t.userCategory).length;
-  }, [transactions?.transactions]);
+  // Fetch uncategorized count from the uncategorized endpoint to ensure accuracy
+  // This matches exactly what the UncategorizedTransactionsView shows
+  const fetchUncategorizedCount = useCallback(async () => {
+    if (!token) return;
+    
+    try {
+      const response = await fetch('/api/plaid/transactions/uncategorized', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      const data = await response.json();
+      if (data.total !== undefined) {
+        setUncategorizedCount(data.total);
+      } else if (data.transactions) {
+        setUncategorizedCount(data.transactions.length);
+      } else {
+        setUncategorizedCount(0);
+      }
+    } catch (err) {
+      console.error('Error fetching uncategorized count:', err);
+      setUncategorizedCount(0);
+    }
+  }, [token]);
+
+  // Fetch uncategorized count when transactions are loaded or refreshed
+  useEffect(() => {
+    if (transactions?.transactions && token) {
+      fetchUncategorizedCount();
+    }
+  }, [transactions, token, fetchUncategorizedCount]);
 
   // Optimize category change handler with useCallback
   const handleCategoryChange = useCallback((transactionId, newCategory) => {
@@ -371,9 +398,10 @@ export default function PlaidApp() {
   const handleRulesApplied = useCallback(() => {
     console.log('🔄 Rules applied, refreshing transactions...');
     fetchTransactions(false); // Refresh from cache/database
+    fetchUncategorizedCount(); // Refresh uncategorized count
     // Trigger refresh in UncategorizedTransactionsView
     setUncategorizedRefreshTrigger(prev => prev + 1);
-  }, []);
+  }, [fetchUncategorizedCount]);
 
   // Handler to delete a transaction
   const handleDeleteTransaction = useCallback(async (transactionId, transactionName, amount, date) => {

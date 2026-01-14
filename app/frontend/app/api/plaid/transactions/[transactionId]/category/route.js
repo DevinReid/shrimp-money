@@ -51,7 +51,7 @@ export async function PUT(req, { params }) {
       );
     }
 
-    // Upsert the category assignment
+    // Upsert the category assignment in PlaidTransactionCategory table
     const result = await prisma.plaidTransactionCategory.upsert({
       where: { transactionId },
       update: {
@@ -65,6 +65,22 @@ export async function PUT(req, { params }) {
         isCustom,
       },
     });
+
+    // ALSO update the normalized PlaidTransaction table to keep userCategory in sync
+    // This ensures spending analysis and other features see the category immediately
+    if (prisma && prisma.plaidTransaction) {
+      try {
+        await prisma.plaidTransaction.updateMany({
+          where: { transactionId },
+          data: { userCategory: trimmedCategory },
+        });
+        console.log(`✅ Synced category "${trimmedCategory}" to PlaidTransaction table for ${transactionId}`);
+      } catch (syncError) {
+        // Transaction might not exist in normalized table yet - that's okay
+        // It will be synced when the transaction is migrated
+        console.log(`⚠️ Could not sync category to PlaidTransaction table: ${syncError.message}`);
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -109,6 +125,20 @@ export async function DELETE(req, { params }) {
     await prisma.plaidTransactionCategory.delete({
       where: { transactionId },
     });
+
+    // ALSO update the normalized PlaidTransaction table to remove the category
+    if (prisma && prisma.plaidTransaction) {
+      try {
+        await prisma.plaidTransaction.updateMany({
+          where: { transactionId },
+          data: { userCategory: null },
+        });
+        console.log(`✅ Removed category from PlaidTransaction table for ${transactionId}`);
+      } catch (syncError) {
+        // Transaction might not exist in normalized table yet - that's okay
+        console.log(`⚠️ Could not remove category from PlaidTransaction table: ${syncError.message}`);
+      }
+    }
 
     return NextResponse.json({
       success: true,

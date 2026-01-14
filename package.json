@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "install:all": "npm install && cd app/server && npm install && cd ../frontend && npm install",
-    "dev": "cd app/frontend && npm run dev"
+    "dev": "cd app/frontend && npm run dev",
+    "apply-rules": "node scripts/apply-rules-to-uncategorized.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

@@ -297,17 +297,19 @@ export async function GET(req) {
     }
 
     // Load actual transactions from spending analysis (PlaidTransaction table)
+    // Use last 12 months to match spending analysis calculation
     let allTransactions = [];
     if (prisma && prisma.plaidTransaction) {
       try {
-        // Get transactions from the last 6 months to analyze patterns
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        // Get transactions from the last 12 months to match spending analysis
+        const twelveMonthsAgo = new Date();
+        twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+        twelveMonthsAgo.setHours(0, 0, 0, 0);
         
         const normalizedTransactions = await prisma.plaidTransaction.findMany({
           where: {
             date: {
-              gte: sixMonthsAgo,
+              gte: twelveMonthsAgo,
             },
           },
           orderBy: { date: 'desc' },
@@ -590,7 +592,7 @@ export async function GET(req) {
       'Travel',
       'Entertainment',
       'Thrift',
-      'Devin',
+      'Devin Lunch',
       'Lunch',
       'Uncategorized',
       'Gifts',
@@ -611,7 +613,7 @@ export async function GET(req) {
       if (categoryLower === 'travel') return 'Travel';
       if (categoryLower === 'entertainment') return 'Entertainment';
       if (categoryLower === 'thrift' || categoryLower === 'thrifting') return 'Thrift';
-      if (categoryLower === 'devin') return 'Devin';
+      if (categoryLower === 'devin' || categoryLower === 'devin lunch') return 'Devin Lunch';
       if (categoryLower === 'lunch') return 'Lunch';
       if (categoryLower === 'uncategorized') return 'Uncategorized';
       if (categoryLower === 'gifts' || categoryLower === 'gift') return 'Gifts';
@@ -619,48 +621,91 @@ export async function GET(req) {
     };
     
     // Calculate monthly spending stats for forecast categories
+    // Use last 12 months (rolling 12 months from today) instead of just current year
     const categoryMonthlyData = {};
-    const currentYear = new Date().getFullYear();
-    const yearStart = new Date(currentYear, 0, 1);
-    const yearEnd = new Date(currentYear, 11, 31, 23, 59, 59);
+    // Reuse the 'today' variable already declared earlier in the function
+    const twelveMonthsAgo = new Date(today);
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+    twelveMonthsAgo.setHours(0, 0, 0, 0);
     
-    // Filter transactions from current year and group by category and month
+    // Filter transactions from last 12 months and group by category and month
     allTransactions
       .filter(t => {
         if (!t.isExpense) return false;
+        // Exclude transfers from category spending stats (they're just moving money between accounts)
+        if (t.userCategory === 'Transfer') return false;
         const txDate = new Date(t.date);
-        return txDate >= yearStart && txDate <= yearEnd;
+        txDate.setHours(0, 0, 0, 0);
+        return txDate >= twelveMonthsAgo && txDate <= today;
       })
       .forEach(t => {
         const normalizedCategory = normalizeCategory(t.userCategory);
         if (!normalizedCategory || !forecastCategories.includes(normalizedCategory)) return;
         
         const txDate = new Date(t.date);
-        const monthIndex = txDate.getMonth();
         const amount = Math.abs(t.amount);
         
         if (!categoryMonthlyData[normalizedCategory]) {
-          categoryMonthlyData[normalizedCategory] = Array(12).fill(0);
+          categoryMonthlyData[normalizedCategory] = [];
         }
         
-        categoryMonthlyData[normalizedCategory][monthIndex] += amount;
+        // Store each transaction's amount and month for proper calculation
+        categoryMonthlyData[normalizedCategory].push({
+          amount: amount,
+          month: txDate.getMonth(),
+          year: txDate.getFullYear(),
+        });
       });
     
     // Calculate min, avg, max for each category
+    // avgMonth should be total spending / 12 (not just average of non-zero months)
     const categorySpendingStats = {};
-    Object.entries(categoryMonthlyData).forEach(([category, monthlyAmounts]) => {
+    Object.entries(categoryMonthlyData).forEach(([category, transactions]) => {
+      if (transactions.length === 0) return;
+      
+      // Calculate total spending over the last 12 months
+      const totalSpending = transactions.reduce((sum, t) => sum + t.amount, 0);
+      
+      // Group by month to calculate min/max and count active months
+      const monthlyTotals = {};
+      transactions.forEach(t => {
+        const monthKey = `${t.year}-${t.month}`;
+        if (!monthlyTotals[monthKey]) {
+          monthlyTotals[monthKey] = 0;
+        }
+        monthlyTotals[monthKey] += t.amount;
+      });
+      
+      const monthlyAmounts = Object.values(monthlyTotals);
       const nonZeroMonths = monthlyAmounts.filter(a => a > 0);
+      
       if (nonZeroMonths.length === 0) return;
       
-      const avgMonth = nonZeroMonths.reduce((a, b) => a + b, 0) / nonZeroMonths.length;
+      // Calculate average per month: total / 12 months
+      // This gives the true monthly average regardless of which months had spending
+      // This matches what the user expects: if they spent $4,000 last year, that's $4,000/12 = $333.33/month
+      const avgMonth = totalSpending / 12;
+      
       const minMonth = Math.min(...nonZeroMonths);
       const maxMonth = Math.max(...monthlyAmounts);
+      
+      // Debug logging for Pets category to help diagnose discrepancies
+      if (category === 'Pets') {
+        console.log(`🐾 Pets category stats:`, {
+          totalSpending: Math.round(totalSpending * 100) / 100,
+          avgMonth: Math.round(avgMonth * 100) / 100,
+          transactionCount: transactions.length,
+          monthsActive: nonZeroMonths.length,
+          monthlyTotals: Object.entries(monthlyTotals).map(([key, val]) => ({ month: key, total: Math.round(val * 100) / 100 })),
+        });
+      }
       
       categorySpendingStats[category] = {
         minMonth: Math.round(minMonth * 100) / 100,
         avgMonth: Math.round(avgMonth * 100) / 100,
         maxMonth: Math.round(maxMonth * 100) / 100,
         monthsActive: nonZeroMonths.length,
+        totalSpending: Math.round(totalSpending * 100) / 100,
       };
     });
 
@@ -672,8 +717,8 @@ export async function GET(req) {
     // Define category schedules
     const categorySchedules = {
       'Partying': { type: 'dayOfWeek', days: [5, 6, 0] }, // Friday, Saturday, Sunday
-      'Dining out': { type: 'dayOfWeek', days: [4] }, // Thursday
-      'Thrift': { type: 'dayOfWeek', days: [4] }, // Thursday
+      'Dining out': { type: 'daily' }, // Every day
+      'Thrift': { type: 'dayOfWeek', days: [5, 6, 0] }, // Friday, Saturday, Sunday (weekends)
       'Shopping': { type: 'dayOfWeek', days: [5, 6, 0] }, // Friday, Saturday, Sunday
       'Groceries': { type: 'daily' }, // Every day
       'Amazon': { type: 'daily' }, // Every day
@@ -682,6 +727,8 @@ export async function GET(req) {
       'Pets': { type: 'daily' }, // Every day (spread throughout month)
       'Entertainment': { type: 'daily' }, // Every day (spread throughout month)
       'Travel': { type: 'daily' }, // Every day (spread throughout month)
+      'Devin Lunch': { type: 'daily' }, // Every day
+      'Gifts': { type: 'daily' }, // Every day
     };
     
     // Categories handled by category spending (exclude from transaction patterns)

@@ -196,6 +196,9 @@ export async function GET(req) {
 
     const transactionData = response.data;
 
+    // Declare mergedTransactions at function scope so it's available for the response
+    let mergedTransactions = [];
+
     // Save to database - MERGE with existing transactions instead of replacing
     // Uses smart duplicate detection: date + amount + normalized name
     if (prisma) {
@@ -315,7 +318,6 @@ export async function GET(req) {
         });
 
         const newTransactions = transactionData.transactions || [];
-        let mergedTransactions = [];
         let mergedStartDate = thirtyDaysAgo;
         let mergedEndDate = now;
         let duplicatesReplaced = 0;
@@ -469,6 +471,163 @@ export async function GET(req) {
           },
         });
         console.log('✅ Saved merged transaction data to database');
+
+        // Automatically apply rules to new uncategorized transactions
+        if (newAdded > 0 && prisma && prisma.plaidCategorizationRule) {
+          try {
+            // Get all active rules
+            const rules = await prisma.plaidCategorizationRule.findMany({
+              where: { isActive: true },
+              orderBy: { priority: 'desc' },
+            });
+
+            if (rules.length > 0) {
+              // Helper to check if a transaction matches a rule
+              const matchesRule = (transaction, rule) => {
+                // First check if transaction is excluded
+                if (rule.excludedTransactions) {
+                  const excluded = Array.isArray(rule.excludedTransactions) 
+                    ? rule.excludedTransactions 
+                    : [];
+                  if (excluded.includes(transaction.transaction_id)) {
+                    return false;
+                  }
+                }
+                
+                const patterns = Array.isArray(rule.patterns) ? rule.patterns : [rule.patterns];
+                const name = (transaction.name || '').toUpperCase();
+                const merchantName = (transaction.merchant_name || '').toUpperCase();
+                const searchText = `${name} ${merchantName}`;
+
+                // Check pattern matching (OR logic - any pattern matches)
+                let patternMatches = false;
+                for (const pattern of patterns) {
+                  const upperPattern = pattern.toUpperCase();
+                  
+                  switch (rule.matchType) {
+                    case 'exact':
+                      if (name === upperPattern || merchantName === upperPattern) {
+                        patternMatches = true;
+                        break;
+                      }
+                      break;
+                    case 'startsWith':
+                      if (name.startsWith(upperPattern) || merchantName.startsWith(upperPattern)) {
+                        patternMatches = true;
+                        break;
+                      }
+                      break;
+                    case 'contains':
+                    default:
+                      if (searchText.includes(upperPattern)) {
+                        patternMatches = true;
+                        break;
+                      }
+                      break;
+                  }
+                  if (patternMatches) break;
+                }
+                
+                if (!patternMatches) return false;
+                
+                // If rule has matchAmounts, check that the transaction amount matches one of them
+                if (rule.matchAmounts && Array.isArray(rule.matchAmounts) && rule.matchAmounts.length > 0) {
+                  const transactionAmount = Math.abs(transaction.amount || 0);
+                  // Check if transaction amount matches any of the specified amounts
+                  const matchesAmount = rule.matchAmounts.some(ruleAmount => {
+                    const amount = Math.abs(ruleAmount);
+                    // Allow for small floating point differences (within 1 cent)
+                    return Math.abs(transactionAmount - amount) <= 0.01;
+                  });
+                  
+                  if (!matchesAmount) {
+                    return false;
+                  }
+                }
+                
+                return true;
+              };
+
+              // Track which transactions were updated
+              let rulesApplied = 0;
+              const updatedTransactions = [...mergedTransactions];
+
+              // Process each uncategorized transaction
+              for (let i = 0; i < updatedTransactions.length; i++) {
+                const transaction = updatedTransactions[i];
+                
+                // Skip if already categorized
+                if (transaction.userCategory) {
+                  continue;
+                }
+
+                // Find matching rule (first match wins due to priority ordering)
+                let matchedRule = null;
+                for (const rule of rules) {
+                  if (matchesRule(transaction, rule)) {
+                    matchedRule = rule;
+                    break;
+                  }
+                }
+
+                if (matchedRule && matchedRule.autoApply) {
+                  // Auto-apply the category
+                  updatedTransactions[i] = {
+                    ...transaction,
+                    userCategory: matchedRule.category,
+                    autoAppliedRule: matchedRule.id,
+                  };
+                  
+                  // Save to the category table
+                  try {
+                    await prisma.plaidTransactionCategory.upsert({
+                      where: { transactionId: transaction.transaction_id },
+                      update: { category: matchedRule.category },
+                      create: {
+                        transactionId: transaction.transaction_id,
+                        category: matchedRule.category,
+                        isCustom: false,
+                      },
+                    });
+                    
+                    // ALSO sync to the normalized PlaidTransaction table
+                    if (prisma && prisma.plaidTransaction) {
+                      try {
+                        await prisma.plaidTransaction.updateMany({
+                          where: { transactionId: transaction.transaction_id },
+                          data: { userCategory: matchedRule.category },
+                        });
+                      } catch (syncError) {
+                        // Transaction might not exist in normalized table yet - that's okay
+                      }
+                    }
+                  } catch (e) {
+                    console.log('Could not save category:', e.message);
+                  }
+                  
+                  rulesApplied++;
+                  console.log(`✅ Auto-applied rule "${matchedRule.name}" → "${matchedRule.category}" to "${transaction.name}"`);
+                }
+              }
+
+              // Update the database with categorized transactions if any were updated
+              if (rulesApplied > 0) {
+                await prisma.plaidTransactionData.update({
+                  where: { itemId: item.item_id },
+                  data: {
+                    transactions: updatedTransactions,
+                  },
+                });
+                console.log(`✅ Automatically applied ${rulesApplied} rule(s) to new transactions`);
+                // Update mergedTransactions for the response
+                mergedTransactions = updatedTransactions;
+              }
+            }
+          } catch (ruleError) {
+            console.log('⚠️ Could not apply rules to new transactions:', ruleError.message);
+            // Don't fail the entire request if rule application fails
+          }
+        }
       } catch (dbError) {
         console.error('⚠️ Could not save to database, falling back to file storage:', dbError.message);
         saveTransactionData(item.item_id, transactionData);
@@ -478,12 +637,16 @@ export async function GET(req) {
     }
 
     // Get categories and notes for these transactions
+    // Use mergedTransactions if available (from database), otherwise use original transactionData
+    const transactionsToReturn = (mergedTransactions && mergedTransactions.length > 0) 
+      ? mergedTransactions 
+      : (transactionData.transactions || []);
+    
     let categoryMap = {};
     let noteMap = {};
     if (prisma) {
       try {
-        const transactions = transactionData.transactions || [];
-        const transactionIds = transactions.map(t => t.transaction_id);
+        const transactionIds = transactionsToReturn.map(t => t.transaction_id);
         
         // Get categories
         const categories = await prisma.plaidTransactionCategory.findMany({
@@ -510,10 +673,11 @@ export async function GET(req) {
     }
 
     // Merge category and note data into transactions
-    const transactionsWithCategories = (transactionData.transactions || []).map(t => ({
+    // If transaction already has userCategory from mergedTransactions, prefer that
+    const transactionsWithCategories = transactionsToReturn.map(t => ({
       ...t,
-      userCategory: categoryMap[t.transaction_id] || null,
-      userNote: noteMap[t.transaction_id] || null,
+      userCategory: t.userCategory || categoryMap[t.transaction_id] || null,
+      userNote: t.userNote || noteMap[t.transaction_id] || null,
     }));
 
     return NextResponse.json({

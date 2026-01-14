@@ -25,6 +25,7 @@ const formatDate = (dateString) => {
 export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDialogOpen, onRulesApplied, onDeleteTransaction: parentDeleteTransaction }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [applyingRules, setApplyingRules] = useState(false);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { token } = useAuth();
@@ -87,6 +88,42 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
         : t
     ));
   }, []);
+
+  const handleApplyRules = useCallback(async () => {
+    if (!token) return;
+    
+    try {
+      setApplyingRules(true);
+      setError(null);
+      
+      const response = await fetch('/api/plaid/rules/apply', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        const message = `✅ Rules Applied!\n\nAuto-categorized: ${data.applied} transaction${data.applied !== 1 ? 's' : ''}\nSuggested for review: ${data.suggested} transaction${data.suggested !== 1 ? 's' : ''}`;
+        alert(message);
+        
+        // Refresh the uncategorized transactions list
+        await fetchUncategorized();
+        
+        // Notify parent to refresh if callback provided
+        if (onRulesApplied) {
+          onRulesApplied();
+        }
+      } else {
+        setError(data.error || 'Failed to apply rules');
+      }
+    } catch (err) {
+      console.error('Error applying rules:', err);
+      setError('Failed to apply rules');
+    } finally {
+      setApplyingRules(false);
+    }
+  }, [token, fetchUncategorized, onRulesApplied]);
   
   const handleBulkCategoryChange = useCallback(async (count, transactionIds) => {
     // Remove all bulk-categorized transactions from the list
@@ -189,22 +226,40 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
         <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>
           Uncategorized Transactions
         </h2>
-        <button
-          onClick={fetchUncategorized}
-          disabled={loading}
-          style={{
-            padding: '10px 20px',
-            background: loading ? '#9ca3af' : '#667eea',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: '14px',
-            fontWeight: '500',
-          }}
-        >
-          {loading ? 'Refreshing...' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={handleApplyRules}
+            disabled={applyingRules || loading}
+            style={{
+              padding: '10px 20px',
+              background: applyingRules || loading ? '#9ca3af' : '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: applyingRules || loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}
+          >
+            {applyingRules ? '⏳ Applying Rules...' : '🚀 Apply Rules to All'}
+          </button>
+          <button
+            onClick={fetchUncategorized}
+            disabled={loading || applyingRules}
+            style={{
+              padding: '10px 20px',
+              background: loading || applyingRules ? '#9ca3af' : '#667eea',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: loading || applyingRules ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {error && (

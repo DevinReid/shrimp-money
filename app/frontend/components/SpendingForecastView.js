@@ -3,6 +3,23 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from './auth/AuthContext';
 
+// Hook to detect mobile screen size
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  return isMobile;
+}
+
 export default function SpendingForecastView() {
   const [forecast, setForecast] = useState(null);
   const [dailyProjections, setDailyProjections] = useState([]);
@@ -27,6 +44,7 @@ export default function SpendingForecastView() {
   const [selectedDayPosition, setSelectedDayPosition] = useState({ x: 0, y: 0 });
   const [serverToday, setServerToday] = useState(null);
   const { token } = useAuth();
+  const isMobile = useIsMobile();
 
   const fetchForecast = async (startBalance = null) => {
     try {
@@ -550,19 +568,48 @@ export default function SpendingForecastView() {
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ 
+      padding: isMobile ? '15px 10px' : '20px', 
+      maxWidth: '1400px', 
+      margin: '0 auto' 
+    }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: isMobile ? 'flex-start' : 'center', 
+        marginBottom: isMobile ? '15px' : '20px', 
+        flexWrap: 'wrap', 
+        gap: isMobile ? '12px' : '15px',
+        flexDirection: isMobile ? 'column' : 'row',
+      }}>
+        <div style={{ width: isMobile ? '100%' : 'auto' }}>
+          <h2 style={{ 
+            margin: 0, 
+            fontSize: isMobile ? '20px' : '24px', 
+            fontWeight: '600', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px' 
+          }}>
             <span>🔮</span> Spending Forecast
           </h2>
-          <p style={{ margin: '5px 0 0', color: '#6b7280', fontSize: '14px' }}>
+          <p style={{ 
+            margin: '5px 0 0', 
+            color: '#6b7280', 
+            fontSize: isMobile ? '13px' : '14px' 
+          }}>
             See into your financial future
           </p>
         </div>
         
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ 
+          display: 'flex', 
+          gap: isMobile ? '8px' : '10px', 
+          alignItems: 'center', 
+          flexWrap: 'wrap',
+          width: isMobile ? '100%' : 'auto',
+        }}>
           {/* Forecast Mode Toggle (Average vs Max) */}
           <div style={{ 
             display: 'flex', 
@@ -571,38 +618,44 @@ export default function SpendingForecastView() {
             padding: '4px', 
             borderRadius: '8px',
             border: '1px solid #e5e7eb',
+            flex: isMobile ? '1 1 auto' : '0 0 auto',
+            minWidth: isMobile ? '0' : 'auto',
           }}>
             <button
               onClick={() => setForecastMode('average')}
               style={{
-                padding: '6px 12px',
+                padding: isMobile ? '8px 10px' : '6px 12px',
                 background: forecastMode === 'average' ? 'white' : 'transparent',
                 color: forecastMode === 'average' ? '#667eea' : '#6b7280',
                 border: 'none',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '13px',
+                fontSize: isMobile ? '12px' : '13px',
                 fontWeight: forecastMode === 'average' ? '600' : '400',
                 boxShadow: forecastMode === 'average' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
                 transition: 'all 0.2s',
+                flex: '1',
+                minWidth: '0',
               }}
               title="Use average spending amounts"
             >
-              Average
+              {isMobile ? 'Avg' : 'Average'}
             </button>
             <button
               onClick={() => setForecastMode('max')}
               style={{
-                padding: '6px 12px',
+                padding: isMobile ? '8px 10px' : '6px 12px',
                 background: forecastMode === 'max' ? 'white' : 'transparent',
                 color: forecastMode === 'max' ? '#667eea' : '#6b7280',
                 border: 'none',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '13px',
+                fontSize: isMobile ? '12px' : '13px',
                 fontWeight: forecastMode === 'max' ? '600' : '400',
                 boxShadow: forecastMode === 'max' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
                 transition: 'all 0.2s',
+                flex: '1',
+                minWidth: '0',
               }}
               title="Use maximum spending amounts (most conservative)"
             >
@@ -618,25 +671,29 @@ export default function SpendingForecastView() {
             padding: '4px', 
             borderRadius: '8px',
             border: '1px solid #e5e7eb',
+            flex: isMobile ? '1 1 auto' : '0 0 auto',
+            minWidth: isMobile ? '0' : 'auto',
           }}>
             <button
               onClick={() => {
                 setViewMode('fromNow');
               }}
               style={{
-                padding: '6px 12px',
+                padding: isMobile ? '8px 10px' : '6px 12px',
                 background: viewMode === 'fromNow' ? 'white' : 'transparent',
                 color: viewMode === 'fromNow' ? '#667eea' : '#6b7280',
                 border: 'none',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '13px',
+                fontSize: isMobile ? '12px' : '13px',
                 fontWeight: viewMode === 'fromNow' ? '600' : '400',
                 boxShadow: viewMode === 'fromNow' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
                 transition: 'all 0.2s',
+                flex: '1',
+                minWidth: '0',
               }}
             >
-              From Now
+              {isMobile ? 'Now' : 'From Now'}
             </button>
             <button
               onClick={() => {
@@ -646,16 +703,18 @@ export default function SpendingForecastView() {
                 setSelectedMonth({ year: now.getFullYear(), month: now.getMonth() });
               }}
               style={{
-                padding: '6px 12px',
+                padding: isMobile ? '8px 10px' : '6px 12px',
                 background: viewMode === 'monthly' ? 'white' : 'transparent',
                 color: viewMode === 'monthly' ? '#667eea' : '#6b7280',
                 border: 'none',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '13px',
+                fontSize: isMobile ? '12px' : '13px',
                 fontWeight: viewMode === 'monthly' ? '600' : '400',
                 boxShadow: viewMode === 'monthly' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
                 transition: 'all 0.2s',
+                flex: '1',
+                minWidth: '0',
               }}
             >
               Monthly
@@ -671,11 +730,13 @@ export default function SpendingForecastView() {
               fetchForecast();
             }}
             style={{
-              padding: '8px 12px',
+              padding: isMobile ? '10px 12px' : '8px 12px',
               border: '1px solid #d1d5db',
               borderRadius: '6px',
-              fontSize: '14px',
+              fontSize: isMobile ? '13px' : '14px',
               background: 'white',
+              flex: isMobile ? '1 1 auto' : '0 0 auto',
+              minWidth: isMobile ? '0' : 'auto',
             }}
           >
               <option value={7}>1 week</option>
@@ -686,18 +747,26 @@ export default function SpendingForecastView() {
             <option value={120}>120 days</option>
           </select>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: isMobile ? '6px' : '10px', 
+              flexWrap: 'wrap',
+              width: isMobile ? '100%' : 'auto',
+            }}>
               <select
                 value={monthsToView}
                 onChange={(e) => {
                   setMonthsToView(parseInt(e.target.value));
                 }}
                 style={{
-                  padding: '8px 12px',
+                  padding: isMobile ? '10px 12px' : '8px 12px',
                   border: '1px solid #d1d5db',
                   borderRadius: '6px',
-                  fontSize: '14px',
+                  fontSize: isMobile ? '13px' : '14px',
                   background: 'white',
+                  flex: isMobile ? '1 1 auto' : '0 0 auto',
+                  minWidth: isMobile ? '0' : 'auto',
                 }}
               >
                 <option value={1}>1 month</option>
@@ -710,46 +779,51 @@ export default function SpendingForecastView() {
               <button
                 onClick={goToPreviousMonth}
                 style={{
-                  padding: '8px 12px',
+                  padding: isMobile ? '10px' : '8px 12px',
                   border: '1px solid #d1d5db',
                   borderRadius: '6px',
-                  fontSize: '16px',
+                  fontSize: isMobile ? '18px' : '16px',
                   background: 'white',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: '#6b7280',
+                  minWidth: isMobile ? '44px' : 'auto',
+                  minHeight: isMobile ? '44px' : 'auto',
                 }}
                 title="Previous period"
               >
                 ←
               </button>
               <div style={{
-                padding: '8px 16px',
+                padding: isMobile ? '10px 12px' : '8px 16px',
                 border: '1px solid #d1d5db',
                 borderRadius: '6px',
-                fontSize: '14px',
+                fontSize: isMobile ? '12px' : '14px',
                 background: 'white',
                 fontWeight: '600',
-                minWidth: '200px',
+                minWidth: isMobile ? '0' : '200px',
                 textAlign: 'center',
+                flex: isMobile ? '1 1 auto' : '0 0 auto',
               }}>
                 {getPeriodDescription()}
               </div>
               <button
                 onClick={goToNextMonth}
                 style={{
-                  padding: '8px 12px',
+                  padding: isMobile ? '10px' : '8px 12px',
                   border: '1px solid #d1d5db',
                   borderRadius: '6px',
-                  fontSize: '16px',
+                  fontSize: isMobile ? '18px' : '16px',
                   background: 'white',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: '#6b7280',
+                  minWidth: isMobile ? '44px' : 'auto',
+                  minHeight: isMobile ? '44px' : 'auto',
                 }}
                 title="Next period"
               >
@@ -761,37 +835,41 @@ export default function SpendingForecastView() {
           <button
             onClick={() => setShowWhatIf(!showWhatIf)}
             style={{
-              padding: '8px 16px',
+              padding: isMobile ? '10px 14px' : '8px 16px',
               background: showWhatIf ? '#667eea' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
               cursor: 'pointer',
-              fontSize: '14px',
+              fontSize: isMobile ? '13px' : '14px',
               fontWeight: '500',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
+              flex: isMobile ? '1 1 auto' : '0 0 auto',
+              minWidth: isMobile ? '0' : 'auto',
             }}
           >
-            <span>✨</span> What If...?
+            <span>✨</span> {isMobile ? 'What If' : 'What If...?'}
           </button>
           
           <button
             onClick={() => fetchForecast()}
             disabled={loading}
             style={{
-              padding: '8px 16px',
+              padding: isMobile ? '10px 14px' : '8px 16px',
               background: loading ? '#9ca3af' : '#10b981',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
               cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: '14px',
+              fontSize: isMobile ? '13px' : '14px',
               fontWeight: '500',
+              flex: isMobile ? '1 1 auto' : '0 0 auto',
+              minWidth: isMobile ? '0' : 'auto',
             }}
           >
-            {loading ? 'Loading...' : '🔄 Refresh'}
+            {loading ? 'Loading...' : isMobile ? '🔄' : '🔄 Refresh'}
           </button>
         </div>
       </div>
@@ -812,26 +890,51 @@ export default function SpendingForecastView() {
       {/* What If Panel */}
       {showWhatIf && (
         <div style={{
-          padding: '20px',
+          padding: isMobile ? '15px' : '20px',
           background: 'linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%)',
           border: '2px solid #667eea',
           borderRadius: '12px',
-          marginBottom: '20px',
+          marginBottom: isMobile ? '15px' : '20px',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
-            <span style={{ fontSize: '24px' }}>🦐</span>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#4338ca' }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px', 
+            marginBottom: '15px',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'flex-start' : 'center',
+          }}>
+            <span style={{ fontSize: isMobile ? '20px' : '24px' }}>🦐</span>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ 
+                margin: 0, 
+                fontSize: isMobile ? '14px' : '16px', 
+                fontWeight: '600', 
+                color: '#4338ca' 
+              }}>
                 What If I Had Different Money?
               </h3>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#6366f1' }}>
+              <p style={{ 
+                margin: '4px 0 0', 
+                fontSize: isMobile ? '12px' : '13px', 
+                color: '#6366f1' 
+              }}>
                 Imagine the possibilities! Enter a custom starting balance to see how your forecast changes.
               </p>
             </div>
           </div>
           
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative' }}>
+          <div style={{ 
+            display: 'flex', 
+            gap: isMobile ? '8px' : '10px', 
+            alignItems: 'center', 
+            flexWrap: 'wrap',
+            flexDirection: isMobile ? 'column' : 'row',
+          }}>
+            <div style={{ 
+              position: 'relative',
+              width: isMobile ? '100%' : 'auto',
+            }}>
               <span style={{
                 position: 'absolute',
                 left: '12px',
@@ -845,11 +948,11 @@ export default function SpendingForecastView() {
                 onChange={(e) => setCustomBalance(e.target.value)}
                 placeholder={forecast?.startingBalance?.toFixed(2) || '0.00'}
                 style={{
-                  padding: '10px 12px 10px 24px',
+                  padding: isMobile ? '12px 12px 12px 24px' : '10px 12px 10px 24px',
                   border: '2px solid #667eea',
                   borderRadius: '8px',
-                  fontSize: '16px',
-                  width: '180px',
+                  fontSize: isMobile ? '16px' : '16px',
+                  width: isMobile ? '100%' : '180px',
                   fontWeight: '600',
                 }}
               />
@@ -859,30 +962,32 @@ export default function SpendingForecastView() {
               onClick={handleWhatIfApply}
               disabled={!customBalance}
               style={{
-                padding: '10px 20px',
+                padding: isMobile ? '12px 16px' : '10px 20px',
                 background: customBalance ? '#667eea' : '#d1d5db',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
                 cursor: customBalance ? 'pointer' : 'not-allowed',
-                fontSize: '14px',
+                fontSize: isMobile ? '13px' : '14px',
                 fontWeight: '600',
+                width: isMobile ? '100%' : 'auto',
               }}
             >
-              ✨ Show Me The Future!
+              ✨ {isMobile ? 'Show Future' : 'Show Me The Future!'}
             </button>
             
             <button
               onClick={handleWhatIfReset}
               style={{
-                padding: '10px 20px',
+                padding: isMobile ? '12px 16px' : '10px 20px',
                 background: 'white',
                 color: '#667eea',
                 border: '2px solid #667eea',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                fontSize: '14px',
+                fontSize: isMobile ? '13px' : '14px',
                 fontWeight: '500',
+                width: isMobile ? '100%' : 'auto',
               }}
             >
               Reset to Reality
@@ -896,25 +1001,39 @@ export default function SpendingForecastView() {
           {/* Summary Cards */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '15px',
-            marginBottom: '30px',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: isMobile ? '12px' : '15px',
+            marginBottom: isMobile ? '20px' : '30px',
           }}>
             <div style={{
-              padding: '20px',
+              padding: isMobile ? '16px' : '20px',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               borderRadius: '12px',
               color: 'white',
             }}>
-              <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>Starting Balance</div>
-              <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              <div style={{ 
+                fontSize: isMobile ? '12px' : '13px', 
+                opacity: 0.9, 
+                marginBottom: '5px' 
+              }}>
+                Starting Balance
+              </div>
+              <div style={{ 
+                fontSize: isMobile ? '24px' : '28px', 
+                fontWeight: '700',
+                wordBreak: 'break-word',
+              }}>
                 {formatCurrency(
                   viewMode === 'monthly' && !includesCurrentMonth() 
                     ? baselineBalance 
                     : forecast.startingBalance
                 )}
               </div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              <div style={{ 
+                fontSize: isMobile ? '11px' : '12px', 
+                opacity: 0.8, 
+                marginTop: '5px' 
+              }}>
                 {viewMode === 'monthly' && !includesCurrentMonth() 
                   ? (() => {
                       const prevMonthDate = new Date(selectedMonth.year, selectedMonth.month, 0);
@@ -927,18 +1046,32 @@ export default function SpendingForecastView() {
             </div>
             
             <div style={{
-              padding: '20px',
+              padding: isMobile ? '16px' : '20px',
               background: visibleEndingBalance >= 0 
                 ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
                 : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
               borderRadius: '12px',
               color: 'white',
             }}>
-              <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>Projected End Balance</div>
-              <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              <div style={{ 
+                fontSize: isMobile ? '12px' : '13px', 
+                opacity: 0.9, 
+                marginBottom: '5px' 
+              }}>
+                Projected End Balance
+              </div>
+              <div style={{ 
+                fontSize: isMobile ? '24px' : '28px', 
+                fontWeight: '700',
+                wordBreak: 'break-word',
+              }}>
                 {formatCurrency(visibleEndingBalance)}
               </div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              <div style={{ 
+                fontSize: isMobile ? '11px' : '12px', 
+                opacity: 0.8, 
+                marginTop: '5px' 
+              }}>
                 {viewMode === 'monthly' 
                   ? (monthsToView === 1 
                       ? `End of ${getPeriodDescription()}`
@@ -950,78 +1083,123 @@ export default function SpendingForecastView() {
             </div>
             
             <div style={{
-              padding: '20px',
+              padding: isMobile ? '16px' : '20px',
               background: forecast.lowestBalance >= 0 
                 ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
                 : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
               borderRadius: '12px',
               color: 'white',
             }}>
-              <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>Lowest Point</div>
-              <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              <div style={{ 
+                fontSize: isMobile ? '12px' : '13px', 
+                opacity: 0.9, 
+                marginBottom: '5px' 
+              }}>
+                Lowest Point
+              </div>
+              <div style={{ 
+                fontSize: isMobile ? '24px' : '28px', 
+                fontWeight: '700',
+                wordBreak: 'break-word',
+              }}>
                 {formatCurrency(forecast.lowestBalance)}
               </div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              <div style={{ 
+                fontSize: isMobile ? '11px' : '12px', 
+                opacity: 0.8, 
+                marginTop: '5px' 
+              }}>
                 on {formatDate(forecast.lowestBalanceDate)}
               </div>
             </div>
             
             <div style={{
-              padding: '20px',
+              padding: isMobile ? '16px' : '20px',
               background: '#f9fafb',
               borderRadius: '12px',
               border: '1px solid #e5e7eb',
             }}>
-              <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '5px' }}>Net Change</div>
               <div style={{ 
-                fontSize: '28px', 
+                fontSize: isMobile ? '12px' : '13px', 
+                color: '#6b7280', 
+                marginBottom: '5px' 
+              }}>
+                Net Change
+              </div>
+              <div style={{ 
+                fontSize: isMobile ? '24px' : '28px', 
                 fontWeight: '700',
                 color: visibleNetChange >= 0 ? '#10b981' : '#ef4444',
+                wordBreak: 'break-word',
               }}>
                 {visibleNetChange >= 0 ? '+' : ''}{formatCurrency(visibleNetChange)}
               </div>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '5px' }}>
+              <div style={{ 
+                fontSize: isMobile ? '11px' : '12px', 
+                color: '#6b7280', 
+                marginTop: '5px' 
+              }}>
                 {formatCurrency(visibleIncome)} in / {formatCurrency(visibleExpenses)} out
               </div>
             </div>
             
             <div style={{
-              padding: '20px',
+              padding: isMobile ? '16px' : '20px',
               background: safeAmountToRemove > 0 
                 ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
                 : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
               borderRadius: '12px',
               color: 'white',
             }}>
-              <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '5px' }}>
+              <div style={{ 
+                fontSize: isMobile ? '12px' : '13px', 
+                opacity: 0.9, 
+                marginBottom: '5px' 
+              }}>
                 Safe to Remove
               </div>
-              <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              <div style={{ 
+                fontSize: isMobile ? '24px' : '28px', 
+                fontWeight: '700',
+                wordBreak: 'break-word',
+              }}>
                 {formatCurrency(safeAmountToRemove)}
               </div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              <div style={{ 
+                fontSize: isMobile ? '11px' : '12px', 
+                opacity: 0.8, 
+                marginTop: '5px' 
+              }}>
                 {safeAmountToRemove > 0 
                   ? `Maintain ${formatCurrency(minimumBalance)} minimum`
                   : `Lowest: ${formatCurrency(visibleLowestBalance)}`
                 }
               </div>
-              <div style={{ marginTop: '10px', fontSize: '11px', opacity: 0.9 }}>
+              <div style={{ 
+                marginTop: '10px', 
+                fontSize: isMobile ? '10px' : '11px', 
+                opacity: 0.9,
+                display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: isMobile ? '6px' : '8px',
+                alignItems: isMobile ? 'flex-start' : 'center',
+              }}>
                 <input
                   type="number"
                   value={minimumBalance}
                   onChange={(e) => setMinimumBalance(Math.max(0, parseFloat(e.target.value) || 0))}
                   placeholder="1000"
                   style={{
-                    width: '80px',
-                    padding: '4px 8px',
+                    width: isMobile ? '100%' : '80px',
+                    padding: isMobile ? '6px 8px' : '4px 8px',
                     border: '1px solid rgba(255, 255, 255, 0.3)',
                     borderRadius: '4px',
                     background: 'rgba(255, 255, 255, 0.2)',
                     color: 'white',
-                    fontSize: '12px',
+                    fontSize: isMobile ? '11px' : '12px',
                   }}
                 />
-                <span style={{ marginLeft: '8px' }}>min balance</span>
+                <span style={{ marginLeft: isMobile ? '0' : '8px' }}>min balance</span>
               </div>
             </div>
           </div>
@@ -1054,31 +1232,42 @@ export default function SpendingForecastView() {
           {/* Balance Timeline Chart */}
           {chartData && dailyProjections.length > 0 && (
             <div style={{
-              padding: '25px',
+              padding: isMobile ? '15px' : '25px',
               background: 'white',
               borderRadius: '12px',
               border: '1px solid #e5e7eb',
-              marginBottom: '25px',
+              marginBottom: isMobile ? '20px' : '25px',
             }}>
-              <h3 style={{ margin: '0 0 20px', fontSize: '18px', fontWeight: '600' }}>
+              <h3 style={{ 
+                margin: '0 0 15px', 
+                fontSize: isMobile ? '16px' : '18px', 
+                fontWeight: '600' 
+              }}>
                 💰 Balance Timeline
               </h3>
               
-              <div style={{ position: 'relative', height: '200px', marginBottom: '10px' }}>
+              <div style={{ 
+                position: 'relative', 
+                height: isMobile ? '150px' : '200px', 
+                marginBottom: '10px',
+                overflowX: isMobile ? 'auto' : 'visible',
+                overflowY: 'visible',
+              }}>
                 {/* Y-axis labels */}
                 <div style={{
                   position: 'absolute',
                   left: 0,
                   top: 0,
                   bottom: 20,
-                  width: '80px',
+                  width: isMobile ? '60px' : '80px',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  fontSize: '11px',
+                  fontSize: isMobile ? '9px' : '11px',
                   color: '#6b7280',
                   textAlign: 'right',
-                  paddingRight: '10px',
+                  paddingRight: isMobile ? '6px' : '10px',
+                  zIndex: 2,
                 }}>
                   <span>{formatCurrency(chartData.maxBalance)}</span>
                   <span>{formatCurrency((chartData.maxBalance + chartData.minBalance) / 2)}</span>
@@ -1088,13 +1277,15 @@ export default function SpendingForecastView() {
                 {/* Chart area */}
                 <div style={{
                   position: 'absolute',
-                  left: '85px',
+                  left: isMobile ? '65px' : '85px',
                   right: 0,
                   top: 0,
                   bottom: 20,
                   background: '#f9fafb',
                   borderRadius: '8px',
-                  overflow: 'hidden',
+                  overflowX: isMobile ? 'auto' : 'hidden',
+                  overflowY: 'hidden',
+                  minWidth: isMobile ? '400px' : 'auto',
                 }}>
                   {/* Zero line */}
                   {chartData.minBalance < 0 && (
@@ -1263,23 +1454,38 @@ export default function SpendingForecastView() {
               {/* Legend */}
               <div style={{
                 display: 'flex',
-                gap: '20px',
+                gap: isMobile ? '12px' : '20px',
                 justifyContent: 'center',
-                fontSize: '12px',
+                fontSize: isMobile ? '10px' : '12px',
                 color: '#6b7280',
                 flexWrap: 'wrap',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px' }} />
-                  <span>Payday (Recurring Income)</span>
+                  <div style={{ 
+                    width: isMobile ? '10px' : '12px', 
+                    height: isMobile ? '10px' : '12px', 
+                    background: '#10b981', 
+                    borderRadius: '2px' 
+                  }} />
+                  <span>{isMobile ? 'Payday' : 'Payday (Recurring Income)'}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#667eea', borderRadius: '2px' }} />
-                  <span>Recurring Expenses</span>
+                  <div style={{ 
+                    width: isMobile ? '10px' : '12px', 
+                    height: isMobile ? '10px' : '12px', 
+                    background: '#667eea', 
+                    borderRadius: '2px' 
+                  }} />
+                  <span>{isMobile ? 'Recurring' : 'Recurring Expenses'}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '12px', height: '12px', background: '#f59e0b', borderRadius: '2px' }} />
-                  <span>Other Expenses</span>
+                  <div style={{ 
+                    width: isMobile ? '10px' : '12px', 
+                    height: isMobile ? '10px' : '12px', 
+                    background: '#f59e0b', 
+                    borderRadius: '2px' 
+                  }} />
+                  <span>{isMobile ? 'Other' : 'Other Expenses'}</span>
                 </div>
               </div>
             </div>
@@ -1287,27 +1493,29 @@ export default function SpendingForecastView() {
 
           {/* Day Details Modal/Dropdown */}
           {selectedDay && (() => {
-            const modalWidth = 400;
+            const modalWidth = isMobile ? window.innerWidth - 20 : 400;
             const totalItems = selectedDay.expenses.length + selectedDay.income.length;
-            const modalHeight = Math.min(500, 100 + totalItems * 60);
-            const padding = 20;
+            const modalHeight = Math.min(isMobile ? window.innerHeight - 40 : 500, 100 + totalItems * 60);
+            const padding = isMobile ? 10 : 20;
             
             // Calculate position (centered above the bar, or below if not enough space)
-            let left = selectedDayPosition.x - modalWidth / 2;
-            let top = selectedDayPosition.y - modalHeight - 10; // Above the bar
+            let left = isMobile ? padding : selectedDayPosition.x - modalWidth / 2;
+            let top = isMobile ? padding : selectedDayPosition.y - modalHeight - 10; // Above the bar
             
             // Keep on screen
-            if (left < padding) left = padding;
-            if (left + modalWidth > window.innerWidth - padding) {
-              left = window.innerWidth - modalWidth - padding;
-            }
-            
-            // If not enough space above, show below
-            if (top < padding) {
-              top = selectedDayPosition.y + 30; // Below the bar
-            }
-            if (top + modalHeight > window.innerHeight - padding) {
-              top = window.innerHeight - modalHeight - padding;
+            if (!isMobile) {
+              if (left < padding) left = padding;
+              if (left + modalWidth > window.innerWidth - padding) {
+                left = window.innerWidth - modalWidth - padding;
+              }
+              
+              // If not enough space above, show below
+              if (top < padding) {
+                top = selectedDayPosition.y + 30; // Below the bar
+              }
+              if (top + modalHeight > window.innerHeight - padding) {
+                top = window.innerHeight - modalHeight - padding;
+              }
             }
             
             return (
@@ -1324,38 +1532,48 @@ export default function SpendingForecastView() {
               >
                 <div
                   style={{
-                    position: 'absolute',
-                    left: `${left}px`,
-                    top: `${top}px`,
-                    width: `${modalWidth}px`,
-                    maxHeight: `${modalHeight}px`,
+                    position: isMobile ? 'fixed' : 'absolute',
+                    left: isMobile ? '0' : `${left}px`,
+                    top: isMobile ? '0' : `${top}px`,
+                    right: isMobile ? '0' : 'auto',
+                    bottom: isMobile ? '0' : 'auto',
+                    width: isMobile ? '100%' : `${modalWidth}px`,
+                    maxHeight: isMobile ? '100%' : `${modalHeight}px`,
                     background: 'white',
-                    borderRadius: '12px',
-                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-                    border: '2px solid #667eea',
+                    borderRadius: isMobile ? '0' : '12px',
+                    boxShadow: isMobile ? 'none' : '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                    border: isMobile ? 'none' : '2px solid #667eea',
                     overflow: 'hidden',
+                    zIndex: 1001,
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* Header */}
                   <div style={{
-                    padding: '16px 20px',
+                    padding: isMobile ? '14px 16px' : '16px 20px',
                     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                     color: 'white',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                   }}>
-                    <div>
-                      <div style={{ fontWeight: '600', fontSize: '16px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ 
+                        fontWeight: '600', 
+                        fontSize: isMobile ? '14px' : '16px' 
+                      }}>
                         {parseLocalDate(selectedDay.date).toLocaleDateString('en-US', {
-                          weekday: 'long',
+                          weekday: isMobile ? 'short' : 'long',
                           month: 'long',
                           day: 'numeric',
-                          year: 'numeric',
+                          year: isMobile ? '2-digit' : 'numeric',
                         })}
                       </div>
-                      <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>
+                      <div style={{ 
+                        fontSize: isMobile ? '11px' : '12px', 
+                        opacity: 0.9, 
+                        marginTop: '2px' 
+                      }}>
                         Balance: {formatCurrency(selectedDay.runningBalance)}
                       </div>
                     </div>
@@ -1365,14 +1583,15 @@ export default function SpendingForecastView() {
                         background: 'rgba(255, 255, 255, 0.2)',
                         border: 'none',
                         borderRadius: '6px',
-                        width: '28px',
-                        height: '28px',
+                        width: isMobile ? '36px' : '28px',
+                        height: isMobile ? '36px' : '28px',
                         color: 'white',
                         cursor: 'pointer',
-                        fontSize: '18px',
+                        fontSize: isMobile ? '24px' : '18px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        flexShrink: 0,
                       }}
                     >
                       ×
@@ -1381,15 +1600,15 @@ export default function SpendingForecastView() {
                   
                   {/* Content */}
                   <div style={{
-                    maxHeight: `${modalHeight - 80}px`,
+                    maxHeight: isMobile ? 'calc(100vh - 140px)' : `${modalHeight - 80}px`,
                     overflowY: 'auto',
-                    padding: '15px',
+                    padding: isMobile ? '12px' : '15px',
                   }}>
                     {/* Income */}
                     {selectedDay.income.length > 0 && (
                       <div style={{ marginBottom: '15px' }}>
                         <div style={{
-                          fontSize: '13px',
+                          fontSize: isMobile ? '12px' : '13px',
                           fontWeight: '600',
                           color: '#10b981',
                           marginBottom: '8px',
@@ -1402,29 +1621,52 @@ export default function SpendingForecastView() {
                           <div
                             key={`income-${payment.id}-${pIdx}`}
                             style={{
-                              padding: '10px 12px',
+                              padding: isMobile ? '12px' : '10px 12px',
                               background: '#f0fdf4',
                               borderRadius: '6px',
                               marginBottom: '6px',
                               border: '1px solid #bbf7d0',
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: '500', fontSize: '14px' }}>
+                            <div style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'flex-start',
+                              flexDirection: isMobile ? 'column' : 'row',
+                              gap: isMobile ? '8px' : '0',
+                            }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ 
+                                  fontWeight: '500', 
+                                  fontSize: isMobile ? '13px' : '14px',
+                                  wordBreak: 'break-word',
+                                }}>
                                   {payment.name}
                                 </div>
-                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                                <div style={{ 
+                                  fontSize: isMobile ? '11px' : '12px', 
+                                  color: '#6b7280', 
+                                  marginTop: '2px' 
+                                }}>
                                   {payment.category} {payment.frequency && `• ${payment.frequency}`}
                                   {payment.source && ` • ${payment.source === 'category-spending' ? 'Weekly estimate' : payment.source}`}
                                 </div>
                               </div>
-                              <div style={{ fontWeight: '600', fontSize: '15px', color: '#10b981' }}>
+                              <div style={{ 
+                                fontWeight: '600', 
+                                fontSize: isMobile ? '14px' : '15px', 
+                                color: '#10b981',
+                                flexShrink: 0,
+                              }}>
                                 +{formatCurrency(payment.amount)}
                               </div>
                             </div>
                             {payment.isVariable && payment.amountMin && payment.amountMax && (
-                              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                              <div style={{ 
+                                fontSize: isMobile ? '10px' : '11px', 
+                                color: '#6b7280', 
+                                marginTop: '4px' 
+                              }}>
                                 Range: {formatCurrency(payment.amountMin)} - {formatCurrency(payment.amountMax)}
                               </div>
                             )}
@@ -1437,7 +1679,7 @@ export default function SpendingForecastView() {
                     {selectedDay.expenses.length > 0 && (
                       <div>
                         <div style={{
-                          fontSize: '13px',
+                          fontSize: isMobile ? '12px' : '13px',
                           fontWeight: '600',
                           color: '#ef4444',
                           marginBottom: '8px',
@@ -1450,29 +1692,52 @@ export default function SpendingForecastView() {
                           <div
                             key={`expense-${payment.id}-${pIdx}`}
                             style={{
-                              padding: '10px 12px',
+                              padding: isMobile ? '12px' : '10px 12px',
                               background: '#fef2f2',
                               borderRadius: '6px',
                               marginBottom: '6px',
                               border: '1px solid #fecaca',
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: '500', fontSize: '14px' }}>
+                            <div style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'flex-start',
+                              flexDirection: isMobile ? 'column' : 'row',
+                              gap: isMobile ? '8px' : '0',
+                            }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ 
+                                  fontWeight: '500', 
+                                  fontSize: isMobile ? '13px' : '14px',
+                                  wordBreak: 'break-word',
+                                }}>
                                   {payment.name}
                                 </div>
-                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                                <div style={{ 
+                                  fontSize: isMobile ? '11px' : '12px', 
+                                  color: '#6b7280', 
+                                  marginTop: '2px' 
+                                }}>
                                   {payment.category} {payment.frequency && `• ${payment.frequency}`}
                                   {payment.source && ` • ${payment.source === 'category-spending' ? 'Weekly estimate' : payment.source}`}
                                 </div>
                               </div>
-                              <div style={{ fontWeight: '600', fontSize: '15px', color: '#111827' }}>
+                              <div style={{ 
+                                fontWeight: '600', 
+                                fontSize: isMobile ? '14px' : '15px', 
+                                color: '#111827',
+                                flexShrink: 0,
+                              }}>
                                 -{formatCurrency(payment.amount)}
                               </div>
                             </div>
                             {payment.isVariable && payment.amountMin && payment.amountMax && (
-                              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                              <div style={{ 
+                                fontSize: isMobile ? '10px' : '11px', 
+                                color: '#6b7280', 
+                                marginTop: '4px' 
+                              }}>
                                 Range: {formatCurrency(payment.amountMin)} - {formatCurrency(payment.amountMax)}
                               </div>
                             )}
@@ -1486,7 +1751,7 @@ export default function SpendingForecastView() {
                         padding: '20px',
                         textAlign: 'center',
                         color: '#6b7280',
-                        fontSize: '14px',
+                        fontSize: isMobile ? '13px' : '14px',
                       }}>
                         No transactions scheduled for this day
                       </div>
@@ -1495,12 +1760,12 @@ export default function SpendingForecastView() {
                   
                   {/* Footer */}
                   <div style={{
-                    padding: '12px 20px',
+                    padding: isMobile ? '12px 16px' : '12px 20px',
                     background: '#f9fafb',
                     borderTop: '1px solid #e5e7eb',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    fontSize: '13px',
+                    fontSize: isMobile ? '12px' : '13px',
                     color: '#6b7280',
                   }}>
                     <span>Net Change:</span>
@@ -1519,13 +1784,18 @@ export default function SpendingForecastView() {
           {/* Critical Dates */}
           {criticalDates.length > 0 && (
             <div style={{
-              padding: '20px',
+              padding: isMobile ? '15px' : '20px',
               background: '#fffbeb',
               border: '1px solid #fcd34d',
               borderRadius: '12px',
-              marginBottom: '25px',
+              marginBottom: isMobile ? '20px' : '25px',
             }}>
-              <h3 style={{ margin: '0 0 15px', fontSize: '16px', fontWeight: '600', color: '#92400e' }}>
+              <h3 style={{ 
+                margin: '0 0 15px', 
+                fontSize: isMobile ? '14px' : '16px', 
+                fontWeight: '600', 
+                color: '#92400e' 
+              }}>
                 ⚡ Critical Dates to Watch
               </h3>
               <div style={{ display: 'grid', gap: '10px' }}>
@@ -1535,29 +1805,45 @@ export default function SpendingForecastView() {
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '12px 15px',
+                      alignItems: isMobile ? 'flex-start' : 'center',
+                      padding: isMobile ? '12px' : '12px 15px',
                       background: 'white',
                       borderRadius: '8px',
                       border: '1px solid #fde68a',
+                      flexDirection: isMobile ? 'column' : 'row',
+                      gap: isMobile ? '8px' : '0',
                     }}
                   >
-                    <div>
-                      <div style={{ fontWeight: '600', color: '#92400e' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ 
+                        fontWeight: '600', 
+                        color: '#92400e',
+                        fontSize: isMobile ? '13px' : '14px',
+                      }}>
                         {formatDate(cd.date)}
                       </div>
-                      <div style={{ fontSize: '13px', color: '#a16207' }}>
+                      <div style={{ 
+                        fontSize: isMobile ? '12px' : '13px', 
+                        color: '#a16207' 
+                      }}>
                         {cd.reason === 'negative_balance' && '⚠️ Balance goes negative!'}
                         {cd.reason === 'stacked_expenses' && `📦 ${cd.expenseCount} expenses stacked`}
                         {cd.reason === 'high_expenses' && '💸 High expense day'}
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: '600', color: '#ef4444' }}>
+                    <div style={{ 
+                      textAlign: isMobile ? 'left' : 'right',
+                      flexShrink: 0,
+                    }}>
+                      <div style={{ 
+                        fontWeight: '600', 
+                        color: '#ef4444',
+                        fontSize: isMobile ? '14px' : '15px',
+                      }}>
                         -{formatCurrency(cd.totalExpenses)}
                       </div>
                       <div style={{ 
-                        fontSize: '13px', 
+                        fontSize: isMobile ? '12px' : '13px', 
                         color: cd.projectedBalance < 0 ? '#ef4444' : '#10b981',
                         fontWeight: '500',
                       }}>
@@ -1578,14 +1864,22 @@ export default function SpendingForecastView() {
             overflow: 'hidden',
           }}>
             <div style={{
-              padding: '20px',
+              padding: isMobile ? '15px' : '20px',
               borderBottom: '1px solid #e5e7eb',
               background: '#f9fafb',
             }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
+              <h3 style={{ 
+                margin: 0, 
+                fontSize: isMobile ? '16px' : '18px', 
+                fontWeight: '600' 
+              }}>
                 📅 Upcoming Payments
               </h3>
-              <p style={{ margin: '5px 0 0', fontSize: '13px', color: '#6b7280' }}>
+              <p style={{ 
+                margin: '5px 0 0', 
+                fontSize: isMobile ? '12px' : '13px', 
+                color: '#6b7280' 
+              }}>
                 Expenses and income for the next {getPeriodDescription()}
               </p>
             </div>
@@ -1609,20 +1903,36 @@ export default function SpendingForecastView() {
                   >
                     {/* Date Header */}
                     <div style={{
-                      padding: '12px 20px',
+                      padding: isMobile ? '12px 15px' : '12px 20px',
                       background: criticalDates.some(c => c.date === day.date) ? '#fffbeb' : '#f9fafb',
                       display: 'flex',
                       justifyContent: 'space-between',
-                      alignItems: 'center',
+                      alignItems: isMobile ? 'flex-start' : 'center',
+                      flexDirection: isMobile ? 'column' : 'row',
+                      gap: isMobile ? '8px' : '0',
                     }}>
-                      <div style={{ fontWeight: '600', fontSize: '14px' }}>
+                      <div style={{ 
+                        fontWeight: '600', 
+                        fontSize: isMobile ? '13px' : '14px' 
+                      }}>
                         {formatDate(day.date)}
                         {criticalDates.some(c => c.date === day.date) && (
                           <span style={{ marginLeft: '8px' }}>⚡</span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: '15px', fontSize: '13px', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <div style={{ 
+                        display: 'flex', 
+                        gap: isMobile ? '8px' : '15px', 
+                        fontSize: isMobile ? '12px' : '13px', 
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        width: isMobile ? '100%' : 'auto',
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          gap: isMobile ? '8px' : '10px', 
+                          alignItems: 'center' 
+                        }}>
                           {day.totalIncome > 0 && (
                             <span style={{ color: '#10b981', fontWeight: '600' }}>
                               +{formatCurrency(day.totalIncome)}
@@ -1634,56 +1944,65 @@ export default function SpendingForecastView() {
                             </span>
                           )}
                         </div>
-                        <span style={{ 
-                          color: day.runningBalance >= 0 ? '#667eea' : '#ef4444',
-                          fontWeight: '500',
-                        }}>
-                          → {formatCurrency(day.runningBalance)}
-                        </span>
-                        <span style={{ 
-                          color: '#d1d5db',
-                          margin: '0 5px',
-                        }}>|</span>
+                        {!isMobile && (
+                          <>
+                            <span style={{ 
+                              color: day.runningBalance >= 0 ? '#667eea' : '#ef4444',
+                              fontWeight: '500',
+                            }}>
+                              → {formatCurrency(day.runningBalance)}
+                            </span>
+                            <span style={{ 
+                              color: '#d1d5db',
+                              margin: '0 5px',
+                            }}>|</span>
+                          </>
+                        )}
                         <span style={{ 
                           color: (() => {
-                            // Calculate cumulative change from starting balance
-                            // This ensures the last day's cumulative change matches the "Net Change" at the top
                             const cumulativeChange = day.runningBalance - baselineBalance;
                             return cumulativeChange >= 0 ? '#10b981' : '#ef4444';
                           })(),
                           fontWeight: '600',
-                          fontSize: '14px',
+                          fontSize: isMobile ? '13px' : '14px',
                         }}>
-                          {(() => {
-                            // Calculate cumulative change from starting balance
+                          {isMobile ? '→ ' : ''}{formatCurrency(day.runningBalance)} ({(() => {
                             const cumulativeChange = day.runningBalance - baselineBalance;
                             return (cumulativeChange >= 0 ? '+' : '') + formatCurrency(cumulativeChange);
-                          })()}
+                          })()})
                         </span>
                       </div>
                     </div>
                     
                     {/* Payments List */}
-                    <div style={{ padding: '10px 20px' }}>
+                    <div style={{ padding: isMobile ? '10px 15px' : '10px 20px' }}>
                       {[...day.income, ...day.expenses].map((payment, pIdx) => (
                         <div
                           key={`${payment.id}-${pIdx}`}
                           style={{
                             display: 'flex',
                             justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '10px 0',
+                            alignItems: isMobile ? 'flex-start' : 'center',
+                            padding: isMobile ? '12px 0' : '10px 0',
                             borderBottom: pIdx < day.income.length + day.expenses.length - 1 
                               ? '1px solid #f3f4f6' 
                               : 'none',
+                            flexDirection: isMobile ? 'column' : 'row',
+                            gap: isMobile ? '8px' : '0',
                           }}
                           onMouseEnter={() => payment.isVariable && setHoveredPayment(`${payment.id}-${day.date}`)}
                           onMouseLeave={() => setHoveredPayment(null)}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: isMobile ? '10px' : '12px',
+                            flex: 1,
+                            minWidth: 0,
+                          }}>
                             <div style={{
-                              width: '36px',
-                              height: '36px',
+                              width: isMobile ? '32px' : '36px',
+                              height: isMobile ? '32px' : '36px',
                               borderRadius: '8px',
                               background: payment.category === 'Income' ? '#dcfce7' : 
                                          payment.category === 'Subscription' ? '#e0e7ff' :
@@ -1691,21 +2010,26 @@ export default function SpendingForecastView() {
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              fontSize: '16px',
+                              fontSize: isMobile ? '14px' : '16px',
+                              flexShrink: 0,
                             }}>
                               {payment.category === 'Income' && '💵'}
                               {payment.category === 'Subscription' && '📺'}
                               {payment.category === 'Bill' && '📄'}
                               {payment.category === 'Credit Card' && '💳'}
                             </div>
-                            <div>
-                              <div style={{ fontWeight: '500', fontSize: '14px' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ 
+                                fontWeight: '500', 
+                                fontSize: isMobile ? '13px' : '14px',
+                                wordBreak: 'break-word',
+                              }}>
                                 {payment.name}
                                 {payment.isVariable && (
                                   <span 
                                     style={{ 
                                       marginLeft: '6px', 
-                                      fontSize: '11px',
+                                      fontSize: isMobile ? '10px' : '11px',
                                       color: '#667eea',
                                       cursor: 'help',
                                     }}
@@ -1715,16 +2039,24 @@ export default function SpendingForecastView() {
                                   </span>
                                 )}
                               </div>
-                              <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                              <div style={{ 
+                                fontSize: isMobile ? '11px' : '12px', 
+                                color: '#6b7280' 
+                              }}>
                                 {payment.category} • {payment.frequency}
                               </div>
                             </div>
                           </div>
                           
-                          <div style={{ textAlign: 'right', position: 'relative' }}>
+                          <div style={{ 
+                            textAlign: isMobile ? 'left' : 'right', 
+                            position: 'relative',
+                            flexShrink: 0,
+                            width: isMobile ? '100%' : 'auto',
+                          }}>
                             <div style={{
                               fontWeight: '600',
-                              fontSize: '15px',
+                              fontSize: isMobile ? '14px' : '15px',
                               color: payment.category === 'Income' ? '#10b981' : '#111827',
                             }}>
                               {payment.category === 'Income' ? '+' : '-'}{formatCurrency(payment.amount)}
@@ -1734,24 +2066,30 @@ export default function SpendingForecastView() {
                             {payment.isVariable && hoveredPayment === `${payment.id}-${day.date}` && (
                               <div style={{
                                 position: 'absolute',
-                                right: 0,
+                                right: isMobile ? 'auto' : 0,
+                                left: isMobile ? 0 : 'auto',
                                 top: '100%',
                                 marginTop: '5px',
                                 padding: '8px 12px',
                                 background: '#1f2937',
                                 color: 'white',
                                 borderRadius: '6px',
-                                fontSize: '12px',
-                                whiteSpace: 'nowrap',
+                                fontSize: isMobile ? '11px' : '12px',
+                                whiteSpace: isMobile ? 'normal' : 'nowrap',
                                 zIndex: 10,
                                 boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                width: isMobile ? '100%' : 'auto',
                               }}>
                                 <div style={{ fontWeight: '600', marginBottom: '4px' }}>
                                   Amount Range
                                 </div>
-                                <div style={{ display: 'flex', gap: '10px' }}>
+                                <div style={{ 
+                                  display: 'flex', 
+                                  gap: '10px',
+                                  flexDirection: isMobile ? 'column' : 'row',
+                                }}>
                                   <span>Low: {formatCurrency(payment.amountMin || payment.amount)}</span>
-                                  <span>|</span>
+                                  {!isMobile && <span>|</span>}
                                   <span>High: {formatCurrency(payment.amountMax || payment.amount)}</span>
                                 </div>
                               </div>

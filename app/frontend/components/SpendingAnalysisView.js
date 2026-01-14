@@ -28,10 +28,12 @@ export default function SpendingAnalysisView() {
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState('last12months'); // Default to last 12 months
   const [availableYears, setAvailableYears] = useState([]);
   const [expandedCategory, setExpandedCategory] = useState(null);
-  const [viewMode, setViewMode] = useState('categories'); // 'categories' or 'monthly'
+  const [viewMode, setViewMode] = useState('categories'); // 'categories', 'monthly', or 'byMonth'
+  const [expandedMonth, setExpandedMonth] = useState(null); // For byMonth view: month index or null
+  const [selectedCategoryInMonth, setSelectedCategoryInMonth] = useState(null); // { monthIndex: number, category: string } or null
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [selectedCategoryForTransactions, setSelectedCategoryForTransactions] = useState(null);
   const [customColors, setCustomColors] = useState({});
@@ -72,7 +74,10 @@ export default function SpendingAnalysisView() {
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`/api/plaid/spending-analysis?year=${year}`, {
+      // Store the requested year to preserve user's selection
+      const requestedYear = year || selectedYear;
+      
+      const response = await fetch(`/api/plaid/spending-analysis?year=${requestedYear}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -88,6 +93,8 @@ export default function SpendingAnalysisView() {
       if (data.success) {
         setAnalysis(data);
         if (data.availableYears?.length > 0) {
+          // Update available years but DON'T reset the selection
+          // The user's selection should be preserved unless there's an actual error
           setAvailableYears(data.availableYears);
         }
       }
@@ -158,14 +165,17 @@ export default function SpendingAnalysisView() {
             <span>📊</span> Spending Analysis
           </h2>
           <p style={{ margin: '5px 0 0', color: '#6b7280', fontSize: '14px' }}>
-            Your yearly spending breakdown by category
+            {analysis?.isLast12Months 
+              ? 'Your spending breakdown for the last 12 months'
+              : `Your spending breakdown for ${analysis?.periodLabel || selectedYear}`
+            }
           </p>
         </div>
         
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <select
             value={selectedYear}
-            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+            onChange={(e) => setSelectedYear(e.target.value)}
             style={{
               padding: '8px 12px',
               border: '1px solid #d1d5db',
@@ -175,11 +185,18 @@ export default function SpendingAnalysisView() {
             }}
           >
             {availableYears.length > 0 ? (
-              availableYears.map(year => (
-                <option key={year} value={year}>{year}</option>
-              ))
+              availableYears.map(year => {
+                // Ensure value is always a string for consistency
+                const yearValue = String(year);
+                if (year === 'last12months' || yearValue === 'last12months') {
+                  return <option key={yearValue} value={yearValue}>Last 12 Months</option>;
+                }
+                return <option key={yearValue} value={yearValue}>{year}</option>;
+              })
             ) : (
-              <option value={selectedYear}>{selectedYear}</option>
+              <option value={selectedYear}>
+                {selectedYear === 'last12months' ? 'Last 12 Months' : selectedYear}
+              </option>
             )}
           </select>
           
@@ -190,7 +207,10 @@ export default function SpendingAnalysisView() {
             padding: '2px',
           }}>
             <button
-              onClick={() => setViewMode('categories')}
+              onClick={() => {
+                setViewMode('categories');
+                setExpandedMonth(null);
+              }}
               style={{
                 padding: '6px 12px',
                 background: viewMode === 'categories' ? 'white' : 'transparent',
@@ -205,7 +225,29 @@ export default function SpendingAnalysisView() {
               By Category
             </button>
             <button
-              onClick={() => setViewMode('monthly')}
+              onClick={() => {
+                setViewMode('byMonth');
+                setExpandedCategory(null);
+              }}
+              style={{
+                padding: '6px 12px',
+                background: viewMode === 'byMonth' ? 'white' : 'transparent',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: viewMode === 'byMonth' ? '600' : '400',
+                boxShadow: viewMode === 'byMonth' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+              }}
+            >
+              By Month
+            </button>
+            <button
+              onClick={() => {
+                setViewMode('monthly');
+                setExpandedMonth(null);
+                setExpandedCategory(null);
+              }}
               style={{
                 padding: '6px 12px',
                 background: viewMode === 'monthly' ? 'white' : 'transparent',
@@ -217,7 +259,7 @@ export default function SpendingAnalysisView() {
                 boxShadow: viewMode === 'monthly' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
               }}
             >
-              By Month
+              Monthly Table
             </button>
           </div>
           
@@ -340,12 +382,12 @@ export default function SpendingAnalysisView() {
               <span style={{ fontSize: '24px' }}>💡</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: '600', color: '#92400e' }}>
-                  Limited data for {selectedYear}
+                  Limited data for {analysis.isLast12Months ? 'Last 12 Months' : selectedYear}
                 </div>
                 <div style={{ color: '#a16207', fontSize: '14px' }}>
                   Only {analysis.summary.totalTransactions} transactions found. 
-                  {availableYears.length > 1 && (
-                    <span> Try selecting {availableYears[0]} for more complete data.</span>
+                  {availableYears.length > 1 && availableYears[1] !== 'last12months' && (
+                    <span> Try selecting {availableYears[1]} for more complete data.</span>
                   )}
                 </div>
               </div>
@@ -723,7 +765,362 @@ export default function SpendingAnalysisView() {
             </div>
           )}
 
-          {/* Monthly View */}
+          {/* By Month View - Similar to category view but organized by month */}
+          {viewMode === 'byMonth' && (
+            <div style={{
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb',
+              overflow: 'hidden',
+            }}>
+              <div style={{
+                padding: '20px',
+                borderBottom: '1px solid #e5e7eb',
+                background: '#f9fafb',
+              }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
+                  Spending by Month
+                </h3>
+                <p style={{ margin: '5px 0 0', fontSize: '13px', color: '#6b7280' }}>
+                  Click a month to see category breakdown
+                </p>
+              </div>
+              
+              <div>
+                {analysis.monthlySummary
+                  .filter(month => month.transactionCount > 0)
+                  .map((month, idx) => {
+                    // Calculate category totals for this month from categoryStats
+                    // monthlyBreakdown is an array of 12 values (one per month, indexed 0-11)
+                    // month.month is the month index (0-11) which should match the breakdown index
+                    const monthIndex = month.month !== undefined ? month.month : idx;
+                    const isLast12Months = selectedYear === 'last12months';
+                    
+                    const monthCategories = analysis.categoryStats
+                      .filter(cat => {
+                        // Check if this category has data for this month
+                        if (!cat.monthlyBreakdown || !Array.isArray(cat.monthlyBreakdown)) return false;
+                        const monthAmount = cat.monthlyBreakdown[monthIndex] || 0;
+                        return monthAmount > 0;
+                      })
+                      .map(cat => {
+                        const amount = cat.monthlyBreakdown[monthIndex] || 0;
+                        return {
+                          category: cat.category,
+                          amount: amount,
+                          isExpense: cat.isExpense,
+                          percentOfMonth: month.totalExpenses > 0 && cat.isExpense
+                            ? Math.round((amount / month.totalExpenses) * 1000) / 10
+                            : (month.totalIncome > 0 && !cat.isExpense && cat.category === 'Income'
+                              ? Math.round((amount / month.totalIncome) * 1000) / 10
+                              : 0),
+                        };
+                      })
+                      .sort((a, b) => b.amount - a.amount);
+
+                    const isExpanded = expandedMonth === idx;
+                    
+                    return (
+                      <div key={idx}>
+                        {/* Month Row */}
+                        <div
+                          onClick={() => {
+                            setExpandedMonth(isExpanded ? null : idx);
+                            setExpandedCategory(null);
+                            setSelectedCategoryInMonth(null); // Reset category selection when collapsing/expanding month
+                          }}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr auto auto auto',
+                            gap: '20px',
+                            alignItems: 'center',
+                            padding: '16px 20px',
+                            borderBottom: '1px solid #f3f4f6',
+                            cursor: 'pointer',
+                            background: isExpanded ? '#f9fafb' : 'white',
+                            transition: 'background 0.2s',
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = isExpanded ? '#f9fafb' : 'white'}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '10px',
+                              background: month.netChange >= 0 
+                                ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                                : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'white',
+                              fontSize: '14px',
+                              fontWeight: '700',
+                            }}>
+                              {month.shortName.substring(0, 3)}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: '600', fontSize: '15px' }}>{month.monthName}</div>
+                              <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                {month.transactionCount} transactions • {monthCategories.length} categories
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>Expenses</div>
+                            <div style={{ fontWeight: '600', fontSize: '14px', color: '#ef4444' }}>
+                              {formatCurrency(month.totalExpenses)}
+                            </div>
+                          </div>
+                          
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>Income</div>
+                            <div style={{ fontWeight: '600', fontSize: '14px', color: '#10b981' }}>
+                              {formatCurrency(month.totalIncome)}
+                            </div>
+                          </div>
+                          
+                          <div style={{ textAlign: 'right', minWidth: '100px' }}>
+                            <div style={{ fontWeight: '700', fontSize: '18px', color: month.netChange >= 0 ? '#10b981' : '#ef4444' }}>
+                              {month.netChange >= 0 ? '+' : ''}{formatCurrency(month.netChange)}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                              Net change
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Expanded Category Breakdown */}
+                        {isExpanded && (
+                          <div style={{
+                            padding: '15px 20px 20px',
+                            background: '#f9fafb',
+                            borderBottom: '1px solid #e5e7eb',
+                          }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#6b7280', marginBottom: '12px' }}>
+                              Category Breakdown for {month.monthName}
+                            </div>
+                            
+                            {monthCategories.length > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {monthCategories.map((catData) => {
+                                  const maxAmount = Math.max(...monthCategories.map(c => c.amount));
+                                  const barWidth = maxAmount > 0 ? (catData.amount / maxAmount) * 100 : 0;
+                                  const isCategorySelected = selectedCategoryInMonth?.monthIndex === idx && selectedCategoryInMonth?.category === catData.category;
+                                  
+                                  // Find the full category stats to get transactions
+                                  const fullCategoryStats = analysis.categoryStats.find(cat => cat.category === catData.category);
+                                  
+                                  // Filter transactions for this month
+                                  // The monthlyBreakdown array is indexed by month position (0-11) in the period
+                                  // We need to match transactions to this specific month
+                                  const monthTransactions = fullCategoryStats?.transactions?.filter(txn => {
+                                    if (!txn.date) return false;
+                                    const txnDate = new Date(txn.date);
+                                    
+                                    // Parse date as local date to avoid timezone issues
+                                    const dateStr = typeof txn.date === 'string' ? txn.date : txnDate.toISOString().split('T')[0];
+                                    const [year, month, day] = dateStr.split('-').map(Number);
+                                    const localTxnDate = new Date(year, month - 1, day);
+                                    
+                                    // Get the month's date range from monthlySummary
+                                    // The month object should have month/year info, or we can derive it from the period
+                                    const isLast12Months = selectedYear === 'last12months';
+                                    
+                                    if (isLast12Months) {
+                                      // For last 12 months, calculate the target month from period start
+                                      const periodStart = new Date();
+                                      periodStart.setMonth(periodStart.getMonth() - 11);
+                                      periodStart.setDate(1);
+                                      periodStart.setHours(0, 0, 0, 0);
+                                      
+                                      const targetMonth = new Date(periodStart);
+                                      targetMonth.setMonth(targetMonth.getMonth() + idx);
+                                      
+                                      return localTxnDate.getMonth() === targetMonth.getMonth() && 
+                                             localTxnDate.getFullYear() === targetMonth.getFullYear();
+                                    } else {
+                                      // Calendar year - match month index (0-11) and year
+                                      return localTxnDate.getMonth() === monthIndex && 
+                                             localTxnDate.getFullYear() === parseInt(selectedYear);
+                                    }
+                                  }) || [];
+                                  
+                                  return (
+                                    <div key={catData.category}>
+                                      <div 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const newSelection = isCategorySelected 
+                                            ? null 
+                                            : { monthIndex: idx, category: catData.category };
+                                          setSelectedCategoryInMonth(newSelection);
+                                        }}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '12px',
+                                          padding: '8px 12px',
+                                          background: isCategorySelected ? '#f0f9ff' : 'white',
+                                          borderRadius: '6px',
+                                          border: isCategorySelected 
+                                            ? `2px solid ${getCategoryColor(catData.category)}` 
+                                            : '1px solid #e5e7eb',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.2s',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          if (!isCategorySelected) {
+                                            e.currentTarget.style.background = '#f9fafb';
+                                            e.currentTarget.style.borderColor = getCategoryColor(catData.category) + '60';
+                                          }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          if (!isCategorySelected) {
+                                            e.currentTarget.style.background = 'white';
+                                            e.currentTarget.style.borderColor = '#e5e7eb';
+                                          }
+                                        }}
+                                      >
+                                        <div 
+                                          style={{
+                                            width: '24px',
+                                            height: '24px',
+                                            borderRadius: '6px',
+                                            background: getCategoryColor(catData.category),
+                                            flexShrink: 0,
+                                          }}
+                                        />
+                                        <div style={{ width: '150px', fontSize: '13px', fontWeight: '500', flexShrink: 0 }}>
+                                          {catData.category}
+                                        </div>
+                                        <div style={{ 
+                                          flex: 1, 
+                                          height: '20px', 
+                                          background: '#f3f4f6', 
+                                          borderRadius: '4px',
+                                          overflow: 'hidden',
+                                        }}>
+                                          <div style={{
+                                            width: `${Math.max(barWidth, 2)}%`,
+                                            height: '100%',
+                                            background: getCategoryColor(catData.category),
+                                            borderRadius: '4px',
+                                            transition: 'width 0.3s ease',
+                                            minWidth: '4px',
+                                          }} />
+                                        </div>
+                                        <div style={{ width: '80px', textAlign: 'right', fontSize: '13px', color: '#6b7280' }}>
+                                          {catData.percentOfMonth}%
+                                        </div>
+                                        <div style={{ width: '100px', textAlign: 'right', fontSize: '14px', fontWeight: '600' }}>
+                                          {formatCurrency(catData.amount)}
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Show transactions when category is selected */}
+                                      {isCategorySelected && monthTransactions.length > 0 && (
+                                        <div style={{
+                                          marginTop: '8px',
+                                          marginLeft: '44px',
+                                          padding: '12px',
+                                          background: 'white',
+                                          borderRadius: '6px',
+                                          border: '1px solid #e5e7eb',
+                                          maxHeight: '300px',
+                                          overflowY: 'auto',
+                                        }}>
+                                          <div style={{ 
+                                            fontSize: '12px', 
+                                            fontWeight: '600', 
+                                            color: '#6b7280', 
+                                            marginBottom: '8px' 
+                                          }}>
+                                            {monthTransactions.length} transaction{monthTransactions.length !== 1 ? 's' : ''} in {month.monthName}
+                                          </div>
+                                          {monthTransactions.map((txn, tIdx) => (
+                                            <div
+                                              key={txn.id || `txn-${idx}-${catData.category}-${tIdx}`}
+                                              style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                padding: '8px 0',
+                                                borderBottom: tIdx < monthTransactions.length - 1 
+                                                  ? '1px solid #f3f4f6' 
+                                                  : 'none',
+                                              }}
+                                            >
+                                              <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ 
+                                                  fontWeight: '500', 
+                                                  fontSize: '13px',
+                                                  whiteSpace: 'nowrap',
+                                                  overflow: 'hidden',
+                                                  textOverflow: 'ellipsis',
+                                                }}>
+                                                  {txn.name || 'Unknown'}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                                                  {txn.date ? new Date(txn.date).toLocaleDateString('en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                    year: 'numeric',
+                                                  }) : ''}
+                                                  {txn.merchant && txn.merchant !== txn.name && (
+                                                    <span> • {txn.merchant}</span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              <div style={{ 
+                                                fontWeight: '600', 
+                                                fontSize: '13px',
+                                                color: '#111827',
+                                                marginLeft: '15px',
+                                              }}>
+                                                {formatCurrencyDetailed(txn.amount || 0)}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                      
+                                      {isCategorySelected && monthTransactions.length === 0 && (
+                                        <div style={{
+                                          marginTop: '8px',
+                                          marginLeft: '44px',
+                                          padding: '12px',
+                                          background: '#f9fafb',
+                                          borderRadius: '6px',
+                                          border: '1px solid #e5e7eb',
+                                          fontSize: '12px',
+                                          color: '#6b7280',
+                                          textAlign: 'center',
+                                        }}>
+                                          No transactions found for {catData.category} in {month.monthName}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>
+                                No category data available for this month
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* Monthly Table View */}
           {viewMode === 'monthly' && (
             <div style={{
               background: 'white',
