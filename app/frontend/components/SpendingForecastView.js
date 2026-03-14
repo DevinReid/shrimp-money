@@ -313,6 +313,43 @@ export default function SpendingForecastView() {
     };
   }, [dailyProjections, forecast]);
 
+  // Compute chart bars - daily for short periods, weekly for 120+ day fromNow periods
+  const chartBars = useMemo(() => {
+    if (!dailyProjections.length) return [];
+
+    let filtered;
+    if (viewMode === 'monthly') {
+      const { firstDay, lastDay } = getMonthBounds();
+      filtered = dailyProjections.filter(d => d.date >= firstDay && d.date <= lastDay);
+    } else {
+      const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
+      todayDate.setHours(0, 0, 0, 0);
+      filtered = dailyProjections.filter(day => {
+        const dayDate = parseLocalDate(day.date);
+        const daysDiff = Math.floor((dayDate - todayDate) / (1000 * 60 * 60 * 24));
+        return daysDiff >= 0 && daysDiff <= daysToForecast;
+      });
+    }
+
+    // For long fromNow periods, aggregate daily bars into weekly bars
+    if (viewMode === 'fromNow' && daysToForecast >= 120) {
+      const weeks = [];
+      for (let i = 0; i < filtered.length; i += 7) {
+        const weekDays = filtered.slice(i, Math.min(i + 7, filtered.length));
+        const lastDay = weekDays[weekDays.length - 1];
+        weeks.push({
+          date: lastDay.date,
+          runningBalance: lastDay.runningBalance,
+          income: weekDays.flatMap(d => d.income),
+          expenses: weekDays.flatMap(d => d.expenses),
+        });
+      }
+      return weeks;
+    }
+
+    return filtered;
+  }, [dailyProjections, daysToForecast, viewMode, serverToday, selectedMonth, monthsToView]);
+
   // Get days with activity (expenses or income) within the forecast period
   const activeDays = useMemo(() => {
     if (viewMode === 'monthly') {
@@ -745,6 +782,8 @@ export default function SpendingForecastView() {
             <option value={60}>60 days</option>
             <option value={90}>90 days</option>
             <option value={120}>120 days</option>
+            <option value={240}>240 days</option>
+            <option value={360}>360 days</option>
           </select>
           ) : (
             <div style={{ 
@@ -1304,27 +1343,10 @@ export default function SpendingForecastView() {
                     display: 'flex',
                     alignItems: 'flex-end',
                     height: '100%',
-                    gap: '1px',
+                    gap: daysToForecast >= 120 ? '0px' : '1px',
                     padding: '0 5px',
                   }}>
-                    {dailyProjections.filter((day) => {
-                      if (viewMode === 'monthly') {
-                        // For monthly mode, show all days in the selected month
-                        const { firstDay, lastDay } = getMonthBounds();
-                        return day.date >= firstDay && day.date <= lastDay;
-                      }
-                      
-                      // For "From Now" mode, show timeline based on forecast period
-                      // Include days from today (daysDiff = 0) through daysToForecast (inclusive)
-                      // So for 30 days: days 0-30 (31 days total, including today)
-                      const dayDate = parseLocalDate(day.date);
-                      // Use server's "today" if available, otherwise fall back to client's today
-                      // This ensures consistent date calculations across environments
-                      const todayDate = serverToday ? parseLocalDate(serverToday) : new Date();
-                      todayDate.setHours(0, 0, 0, 0);
-                      const daysDiff = Math.floor((dayDate - todayDate) / (1000 * 60 * 60 * 24));
-                      return daysDiff >= 0 && daysDiff <= daysToForecast;
-                    }).map((day, idx) => {
+                    {chartBars.map((day, idx) => {
                       const barHeight = ((day.runningBalance - chartData.minBalance) / chartData.range) * 100;
                       const isNegative = day.runningBalance < 0;
                       const isSelected = selectedDay?.date === day.date;
@@ -1372,20 +1394,20 @@ export default function SpendingForecastView() {
                             border: isSelected ? '2px solid #667eea' : 'none',
                             boxShadow: isSelected ? '0 0 0 2px rgba(102, 126, 234, 0.2)' : 'none',
                           }}
-                          title={`${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}\nCumulative Change: ${(() => {
+                          title={`${viewMode === 'fromNow' && daysToForecast >= 120 ? 'Week ending ' : ''}${formatDate(day.date)}: ${formatCurrency(day.runningBalance)}\nCumulative Change: ${(() => {
                             const cumulativeChange = day.runningBalance - baselineBalance;
                             return (cumulativeChange >= 0 ? '+' : '') + formatCurrency(cumulativeChange);
                           })()}\nRecurring Income: ${formatCurrency(recurringIncome)}\nRecurring Expenses: ${formatCurrency(recurringExpenses)}\nOther Expenses: ${formatCurrency(otherExpenses)}`}
                           onMouseEnter={(e) => {
                             if (!isSelected) {
                               e.currentTarget.style.opacity = '0.8';
-                              e.currentTarget.style.transform = 'scale(1.05)';
+                              e.currentTarget.style.transform = 'scaleY(1.05)';
                             }
                           }}
                           onMouseLeave={(e) => {
                             if (!isSelected) {
                               e.currentTarget.style.opacity = (recurringIncome > 0 || recurringExpenses > 0 || otherExpenses > 0) ? 1 : 0.5;
-                              e.currentTarget.style.transform = 'scale(1)';
+                              e.currentTarget.style.transform = 'scaleY(1)';
                             }
                           }}
                         >
