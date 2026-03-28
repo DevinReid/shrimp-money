@@ -599,7 +599,8 @@ export async function GET(req) {
                 if (categoryHistory.length > 0) {
                   for (let i = 0; i < updatedTransactions.length; i++) {
                     const transaction = updatedTransactions[i];
-                    if (transaction.userCategory) continue;
+                    // Skip if already categorized (either on the object or in the DB)
+                    if (transaction.userCategory || existingCategoryMap[transaction.transaction_id]) continue;
 
                     const fuzzyMatch = fuzzyMatchTransaction(transaction, categoryHistory);
                     if (fuzzyMatch) {
