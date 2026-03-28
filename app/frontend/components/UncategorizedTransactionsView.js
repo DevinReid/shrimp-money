@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './auth/AuthContext';
-import { useCategories } from './CategoriesContext';
 import CategoryDropdown from './CategoryDropdown';
 import AddRuleButton from './AddRuleButton';
 import TransactionNote from './TransactionNote';
@@ -34,7 +33,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
   const [bulkApplying, setBulkApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState(null); // { percent, message }
   const { token } = useAuth();
-  const { categories } = useCategories();
+  const [categoryList, setCategoryList] = useState([]);
   const progressTimerRef = useRef(null);
 
   const fetchUncategorized = useCallback(async () => {
@@ -84,6 +83,23 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
     fetchUncategorized();
   }, [fetchUncategorized]);
 
+  // Fetch available categories
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/plaid/categories', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        const all = [...new Set([
+          ...(data.predefined || []),
+          ...(data.custom || []),
+        ])].filter(c => c && c !== 'Uncategorized');
+        setCategoryList(all);
+      })
+      .catch(() => {});
+  }, [token]);
+
   // Cleanup progress timer on unmount
   useEffect(() => {
     return () => {
@@ -118,7 +134,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
 
   const handleSelectAll = useCallback(() => {
     setSelectedIds(new Set(filteredTransactions.map(t => t.transaction_id)));
-  }, []);
+  }, [filteredTransactions]);
 
   const handleSelectNone = useCallback(() => {
     setSelectedIds(new Set());
@@ -345,12 +361,6 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
     return false;
   });
 
-  // Gather all category options
-  const allCategories = [...new Set([
-    ...(categories?.predefined || []),
-    ...(categories?.custom || []),
-  ])].filter(c => c && c !== 'Uncategorized');
-
   if (loading && transactions.length === 0) {
     return (
       <div style={{ padding: '20px', textAlign: 'center' }}>
@@ -546,7 +556,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
                 }}
               >
                 <option value="">Choose category...</option>
-                {allCategories.map(cat => (
+                {categoryList.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
