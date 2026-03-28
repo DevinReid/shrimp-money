@@ -104,7 +104,8 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
       const data = await response.json();
 
       if (data.success) {
-        const message = `✅ Rules Applied!\n\nAuto-categorized: ${data.applied} transaction${data.applied !== 1 ? 's' : ''}\nSuggested for review: ${data.suggested} transaction${data.suggested !== 1 ? 's' : ''}`;
+        const fuzzyMsg = data.fuzzyApplied ? `\nFuzzy-matched: ${data.fuzzyApplied} transaction${data.fuzzyApplied !== 1 ? 's' : ''}` : '';
+        const message = `✅ Rules Applied!\n\nAuto-categorized: ${data.applied} transaction${data.applied !== 1 ? 's' : ''}${fuzzyMsg}\nSuggested for review: ${data.suggested} transaction${data.suggested !== 1 ? 's' : ''}`;
         alert(message);
         
         // Refresh the uncategorized transactions list

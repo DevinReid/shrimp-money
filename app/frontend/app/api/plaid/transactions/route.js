@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireMFA } from '@/lib/middleware/auth';
 import { client, readItems, saveTransactionData, readTransactionData } from '@/lib/plaid';
 const prisma = require('@/lib/prisma');
+const { buildCategoryHistory, fuzzyMatchTransaction } = require('@/lib/merchantMatcher');
 
 export async function GET(req) {
   const authResult = requireMFA(req);
@@ -550,16 +551,16 @@ export async function GET(req) {
 
               // Track which transactions were updated
               let rulesApplied = 0;
+              let fuzzyApplied = 0;
               const updatedTransactions = [...mergedTransactions];
+              const categoryUpserts = []; // Batch DB writes
 
-              // Process each uncategorized transaction
+              // Phase 1: Apply rules to uncategorized transactions
               for (let i = 0; i < updatedTransactions.length; i++) {
                 const transaction = updatedTransactions[i];
-                
+
                 // Skip if already categorized
-                if (transaction.userCategory) {
-                  continue;
-                }
+                if (transaction.userCategory) continue;
 
                 // Find matching rule (first match wins due to priority ordering)
                 let matchedRule = null;
@@ -571,55 +572,88 @@ export async function GET(req) {
                 }
 
                 if (matchedRule && matchedRule.autoApply) {
-                  // Auto-apply the category
                   updatedTransactions[i] = {
                     ...transaction,
                     userCategory: matchedRule.category,
                     autoAppliedRule: matchedRule.id,
                   };
-                  
-                  // Save to the category table
-                  try {
-                    await prisma.plaidTransactionCategory.upsert({
-                      where: { transactionId: transaction.transaction_id },
-                      update: { category: matchedRule.category },
-                      create: {
-                        transactionId: transaction.transaction_id,
-                        category: matchedRule.category,
-                        isCustom: false,
-                      },
-                    });
-                    
-                    // ALSO sync to the normalized PlaidTransaction table
-                    if (prisma && prisma.plaidTransaction) {
-                      try {
-                        await prisma.plaidTransaction.updateMany({
-                          where: { transactionId: transaction.transaction_id },
-                          data: { userCategory: matchedRule.category },
-                        });
-                      } catch (syncError) {
-                        // Transaction might not exist in normalized table yet - that's okay
-                      }
-                    }
-                  } catch (e) {
-                    console.log('Could not save category:', e.message);
-                  }
-                  
+                  categoryUpserts.push({
+                    transactionId: transaction.transaction_id,
+                    category: matchedRule.category,
+                  });
                   rulesApplied++;
                   console.log(`✅ Auto-applied rule "${matchedRule.name}" → "${matchedRule.category}" to "${transaction.name}"`);
                 }
               }
 
-              // Update the database with categorized transactions if any were updated
-              if (rulesApplied > 0) {
+              // Phase 2: Fuzzy-match remaining uncategorized against history
+              try {
+                // Build category history from all transactions (including ones just categorized by rules)
+                const existingCategories = await prisma.plaidTransactionCategory.findMany();
+                const existingCategoryMap = existingCategories.reduce((acc, cat) => {
+                  acc[cat.transactionId] = cat.category;
+                  return acc;
+                }, {});
+                const categoryHistory = buildCategoryHistory(updatedTransactions, existingCategoryMap);
+
+                if (categoryHistory.length > 0) {
+                  for (let i = 0; i < updatedTransactions.length; i++) {
+                    const transaction = updatedTransactions[i];
+                    if (transaction.userCategory) continue;
+
+                    const fuzzyMatch = fuzzyMatchTransaction(transaction, categoryHistory);
+                    if (fuzzyMatch) {
+                      updatedTransactions[i] = {
+                        ...transaction,
+                        userCategory: fuzzyMatch.category,
+                        autoAppliedFuzzy: true,
+                      };
+                      categoryUpserts.push({
+                        transactionId: transaction.transaction_id,
+                        category: fuzzyMatch.category,
+                      });
+                      fuzzyApplied++;
+                      console.log(`🔍 Fuzzy-matched "${transaction.name}" → "${fuzzyMatch.category}" (${(fuzzyMatch.score * 100).toFixed(0)}% ${fuzzyMatch.reason}, matched: "${fuzzyMatch.matchedMerchant}")`);
+                    }
+                  }
+                }
+              } catch (fuzzyError) {
+                console.log('⚠️ Fuzzy matching failed, continuing:', fuzzyError.message);
+              }
+
+              // Phase 3: Batch save all category assignments
+              if (categoryUpserts.length > 0) {
+                try {
+                  await prisma.$transaction(
+                    categoryUpserts.map(({ transactionId, category }) =>
+                      prisma.plaidTransactionCategory.upsert({
+                        where: { transactionId },
+                        update: { category },
+                        create: { transactionId, category, isCustom: false },
+                      })
+                    )
+                  );
+
+                  // Batch sync to normalized PlaidTransaction table
+                  if (prisma.plaidTransaction) {
+                    await prisma.$transaction(
+                      categoryUpserts.map(({ transactionId, category }) =>
+                        prisma.plaidTransaction.updateMany({
+                          where: { transactionId },
+                          data: { userCategory: category },
+                        })
+                      )
+                    ).catch(e => console.log('PlaidTransaction sync skipped:', e.message));
+                  }
+                } catch (e) {
+                  console.log('Could not batch save categories:', e.message);
+                }
+
                 await prisma.plaidTransactionData.update({
                   where: { itemId: item.item_id },
-                  data: {
-                    transactions: updatedTransactions,
-                  },
+                  data: { transactions: updatedTransactions },
                 });
-                console.log(`✅ Automatically applied ${rulesApplied} rule(s) to new transactions`);
-                // Update mergedTransactions for the response
+                console.log(`✅ Auto-categorized ${rulesApplied} by rules, ${fuzzyApplied} by fuzzy matching`);
                 mergedTransactions = updatedTransactions;
               }
             }
