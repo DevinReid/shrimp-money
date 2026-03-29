@@ -34,6 +34,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
   const [applyProgress, setApplyProgress] = useState(null); // { percent, message }
   const { token } = useAuth();
   const [categoryList, setCategoryList] = useState([]);
+  const [quickMode, setQuickMode] = useState(true);
   const progressTimerRef = useRef(null);
 
   const fetchUncategorized = useCallback(async () => {
@@ -108,7 +109,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
   }, []);
 
   const handleCategoryChange = useCallback((transactionId, newCategory) => {
-    // Remove from the uncategorized list immediately since the API already saved it
+    // Optimistic: remove from list immediately (API fires in background)
     if (newCategory && newCategory !== 'Uncategorized') {
       setTransactions(prev => prev.filter(t => t.transaction_id !== transactionId));
       setSelectedIds(prev => {
@@ -118,6 +119,12 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
       });
     }
   }, []);
+
+  const handleCategoryError = useCallback((transactionId, errorMsg) => {
+    // If optimistic save failed, re-fetch the list to restore the transaction
+    setError(`${errorMsg} — refreshing list`);
+    fetchUncategorized();
+  }, [fetchUncategorized]);
 
   const handleNoteChange = useCallback((transactionId, newNote) => {
     setTransactions(prev => prev.map(t =>
@@ -417,6 +424,29 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
             {loading ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
+      </div>
+
+      {/* Quick Mode Toggle */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        marginBottom: '16px',
+        fontSize: '13px',
+        color: '#6b7280',
+      }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={quickMode}
+            onChange={(e) => setQuickMode(e.target.checked)}
+            style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#667eea' }}
+          />
+          <span style={{ fontWeight: '500' }}>Quick mode</span>
+        </label>
+        <span style={{ color: '#9ca3af' }}>
+          {quickMode ? '— pick a category and move on, no prompts' : '— shows similar transactions after each pick'}
+        </span>
       </div>
 
       {/* Progress bar for Apply Rules */}
@@ -760,6 +790,8 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
                       transactionName={transaction.name}
                       onBulkApply={handleBulkCategoryChange}
                       onBulkDialogOpen={onBulkDialogOpen}
+                      skipBulkDialog={quickMode}
+                      onError={handleCategoryError}
                     />
                   </div>
                   <div className="transaction-other-actions">

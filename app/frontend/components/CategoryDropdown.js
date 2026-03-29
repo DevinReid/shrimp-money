@@ -6,7 +6,7 @@ import { useAuth } from './auth/AuthContext';
 import { useCategories } from './CategoriesContext';
 import BulkCategoryDialog from './BulkCategoryDialog';
 
-function CategoryDropdown({ transactionId, currentCategory, onCategoryChange, merchantName, transactionName, onBulkApply, onBulkDialogOpen }) {
+function CategoryDropdown({ transactionId, currentCategory, onCategoryChange, merchantName, transactionName, onBulkApply, onBulkDialogOpen, skipBulkDialog, onError }) {
   const { categories, refreshCategories } = useCategories();
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -119,7 +119,30 @@ function CategoryDropdown({ transactionId, currentCategory, onCategoryChange, me
       return;
     }
 
-    setLoading(true);
+    // Optimistic: update UI immediately, don't wait for API
+    setShowDropdown(false);
+    onCategoryChange(category);
+
+    // Show bulk dialog only if not skipped
+    if (!skipBulkDialog) {
+      const merchant = merchantName || transactionName;
+      if (merchant && String(merchant).trim().length > 0) {
+        if (onBulkDialogOpen) {
+          onBulkDialogOpen({
+            transactionId,
+            merchantName,
+            transactionName,
+            category,
+          });
+        } else if (!showBulkDialog && !dialogShouldShowRef.current) {
+          setLastAssignedCategory(category);
+          dialogShouldShowRef.current = true;
+          setShowBulkDialog(true);
+        }
+      }
+    }
+
+    // Fire API in background
     try {
       const response = await fetch(`/api/plaid/transactions/${transactionId}/category`, {
         method: 'PUT',
@@ -131,49 +154,15 @@ function CategoryDropdown({ transactionId, currentCategory, onCategoryChange, me
       });
 
       const data = await response.json();
-      if (data.success) {
-        setShowDropdown(false);
-        
-        // Show bulk categorization dialog if we have merchant/transaction info
-        // Check BEFORE calling onCategoryChange to avoid component unmount
-        const merchant = merchantName || transactionName;
-        
-        // Show dialog if we have merchant info (for any category change, not just uncategorized)
-        // Check for truthy value and non-empty string
-        if (merchant && String(merchant).trim().length > 0) {
-          // Notify parent to open dialog - parent will manage the state
-          if (onBulkDialogOpen) {
-            onBulkDialogOpen({
-              transactionId,
-              merchantName,
-              transactionName,
-              category,
-            });
-          } else {
-            // Fallback to local state if parent doesn't provide callback
-            if (!showBulkDialog && !dialogShouldShowRef.current) {
-              setLastAssignedCategory(category);
-              dialogShouldShowRef.current = true;
-              setShowBulkDialog(true);
-            }
-          }
-          
-          // Update parent state immediately - dialog state is now managed by parent
-          onCategoryChange(category);
-        } else {
-          // No dialog to show, just update normally
-          onCategoryChange(category);
-        }
-      } else {
-        alert('Failed to update category: ' + (data.error || 'Unknown error'));
+      if (!data.success) {
+        console.error('Failed to save category:', data.error);
+        if (onError) onError(transactionId, 'Failed to save category');
       }
     } catch (err) {
       console.error('Error updating category:', err);
-      alert('Failed to update category');
-    } finally {
-      setLoading(false);
+      if (onError) onError(transactionId, 'Failed to save category');
     }
-  }, [transactionId, currentCategory, merchantName, transactionName, token, onCategoryChange, onBulkDialogOpen]);
+  }, [transactionId, currentCategory, merchantName, transactionName, token, onCategoryChange, onBulkDialogOpen, skipBulkDialog, onError]);
   
   const handleBulkApply = (count, transactionIds) => {
     // Notify parent component about bulk changes if callback provided
