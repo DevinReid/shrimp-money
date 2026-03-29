@@ -132,15 +132,9 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
     });
   }, []);
 
-  const handleSelectAll = useCallback(() => {
-    setSelectedIds(new Set(filteredTransactions.map(t => t.transaction_id)));
-  }, [filteredTransactions]);
-
   const handleSelectNone = useCallback(() => {
     setSelectedIds(new Set());
   }, []);
-
-  const isAllSelected = filteredTransactions.length > 0 && selectedIds.size === filteredTransactions.length;
 
   // --- Bulk categorize handler ---
   const handleBulkAssign = useCallback(async (createRule = false) => {
@@ -360,6 +354,12 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
 
     return false;
   });
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedIds(new Set(filteredTransactions.map(t => t.transaction_id)));
+  }, [filteredTransactions]);
+
+  const isAllSelected = filteredTransactions.length > 0 && selectedIds.size === filteredTransactions.length;
 
   if (loading && transactions.length === 0) {
     return (
