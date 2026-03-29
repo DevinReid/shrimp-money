@@ -189,6 +189,12 @@ export async function GET(req) {
         }));
     }
 
+    // Count ALL uncategorized transactions (not just current period)
+    const allUncategorizedCount = allTransactions.filter(t => !t.userCategory || t.userCategory === 'Uncategorized').length;
+    const allUncategorizedTotal = allTransactions
+      .filter(t => !t.userCategory || t.userCategory === 'Uncategorized')
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
     // Filter transactions for the selected period
     // For "last 12 months", use rolling 12 months from today
     // For calendar year, use Jan 1 - Dec 31 of that year
@@ -692,6 +698,8 @@ export async function GET(req) {
         categorizedTransactions: periodTransactions.filter(t => t.userCategory).length,
         uncategorizedTransactions: uncategorizedCount,
         uncategorizedTotal: Math.round(uncategorizedTotal * 100) / 100,
+        allUncategorizedTransactions: allUncategorizedCount,
+        allUncategorizedTotal: Math.round(allUncategorizedTotal * 100) / 100,
         monthsWithData,
         categoryCount: Object.keys(categoryTotals).length,
         // Warn about missing transactions

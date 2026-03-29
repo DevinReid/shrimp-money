@@ -259,7 +259,7 @@ export default function SpendingAnalysisView() {
                 boxShadow: viewMode === 'monthly' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
               }}
             >
-              Monthly Table
+              Budget Check
             </button>
           </div>
           
@@ -367,6 +367,143 @@ export default function SpendingAnalysisView() {
             </div>
           </div>
 
+          {/* Recent Months Snapshot */}
+          {(() => {
+            const monthsWithData = analysis.monthlySummary
+              .map((m, i) => ({ ...m, originalIndex: i }))
+              .filter(m => m.transactionCount > 0);
+            const thisMonth = monthsWithData[monthsWithData.length - 1] || null;
+            const lastMonth = monthsWithData[monthsWithData.length - 2] || null;
+            if (!thisMonth) return null;
+
+            const expenseChange = lastMonth && lastMonth.totalExpenses > 0
+              ? ((thisMonth.totalExpenses - lastMonth.totalExpenses) / lastMonth.totalExpenses) * 100
+              : null;
+
+            return (
+              <div style={{ marginBottom: '25px' }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: lastMonth ? '1fr 1fr' : '1fr',
+                  gap: '15px',
+                  marginBottom: expenseChange !== null ? '12px' : '0',
+                }}>
+                  {/* This Month */}
+                  <div style={{
+                    padding: '20px',
+                    background: 'white',
+                    borderRadius: '12px',
+                    border: '2px solid #3b82f6',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '700', fontSize: '16px', color: '#1f2937' }}>
+                        {thisMonth.monthName}
+                      </div>
+                      <span style={{
+                        padding: '2px 8px',
+                        background: '#dbeafe',
+                        color: '#1d4ed8',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                      }}>In Progress</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '20px', marginBottom: '12px' }}>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>Spent</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#ef4444' }}>{formatCurrency(thisMonth.totalExpenses)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>Income</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>{formatCurrency(thisMonth.totalIncome)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>Net</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: thisMonth.netChange >= 0 ? '#10b981' : '#ef4444' }}>
+                          {thisMonth.netChange >= 0 ? '+' : ''}{formatCurrency(thisMonth.netChange)}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {thisMonth.topCategories.slice(0, 3).map((cat, i) => (
+                        <span key={i} style={{
+                          padding: '3px 8px',
+                          background: getCategoryColor(cat.category) + '20',
+                          color: getCategoryColor(cat.category),
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: '500',
+                        }}>
+                          {cat.category}: {formatCurrency(cat.total)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Last Month */}
+                  {lastMonth && (
+                    <div style={{
+                      padding: '20px',
+                      background: 'white',
+                      borderRadius: '12px',
+                      border: '1px solid #e5e7eb',
+                    }}>
+                      <div style={{ fontWeight: '700', fontSize: '16px', color: '#1f2937', marginBottom: '12px' }}>
+                        {lastMonth.monthName}
+                      </div>
+                      <div style={{ display: 'flex', gap: '20px', marginBottom: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Spent</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#ef4444' }}>{formatCurrency(lastMonth.totalExpenses)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Income</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>{formatCurrency(lastMonth.totalIncome)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Net</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: lastMonth.netChange >= 0 ? '#10b981' : '#ef4444' }}>
+                            {lastMonth.netChange >= 0 ? '+' : ''}{formatCurrency(lastMonth.netChange)}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {lastMonth.topCategories.slice(0, 3).map((cat, i) => (
+                          <span key={i} style={{
+                            padding: '3px 8px',
+                            background: getCategoryColor(cat.category) + '20',
+                            color: getCategoryColor(cat.category),
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                          }}>
+                            {cat.category}: {formatCurrency(cat.total)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Change indicator */}
+                {expenseChange !== null && (
+                  <div style={{
+                    padding: '10px 16px',
+                    background: expenseChange <= 0 ? '#ecfdf5' : '#fef2f2',
+                    border: `1px solid ${expenseChange <= 0 ? '#a7f3d0' : '#fecaca'}`,
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: expenseChange <= 0 ? '#065f46' : '#991b1b',
+                    textAlign: 'center',
+                  }}>
+                    Spending {expenseChange <= 0 ? 'down' : 'up'} {Math.abs(Math.round(expenseChange))}% from {lastMonth.monthName}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Year Data Warning */}
           {analysis.summary.totalTransactions < 50 && (
             <div style={{
@@ -395,7 +532,7 @@ export default function SpendingAnalysisView() {
           )}
 
           {/* Uncategorized Warning */}
-          {analysis.summary.uncategorizedTransactions > 0 && (
+          {(analysis.summary.allUncategorizedTransactions || analysis.summary.uncategorizedTransactions) > 0 && (
             <div style={{
               padding: '16px 20px',
               background: '#fef3c7',
@@ -409,10 +546,10 @@ export default function SpendingAnalysisView() {
               <span style={{ fontSize: '24px' }}>⚠️</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: '600', color: '#92400e' }}>
-                  {analysis.summary.uncategorizedTransactions} uncategorized transactions
+                  {analysis.summary.allUncategorizedTransactions || analysis.summary.uncategorizedTransactions} uncategorized transactions
                 </div>
                 <div style={{ color: '#a16207', fontSize: '14px' }}>
-                  totaling {formatCurrencyDetailed(analysis.summary.uncategorizedTotal)} — categorize them for better insights!
+                  totaling {formatCurrencyDetailed(analysis.summary.allUncategorizedTotal || analysis.summary.uncategorizedTotal)} — categorize them for better insights!
                 </div>
               </div>
             </div>
@@ -788,14 +925,15 @@ export default function SpendingAnalysisView() {
               
               <div>
                 {analysis.monthlySummary
+                  .map((month, originalIndex) => ({ ...month, originalIndex }))
                   .filter(month => month.transactionCount > 0)
-                  .map((month, idx) => {
-                    // Calculate category totals for this month from categoryStats
-                    // monthlyBreakdown is an array of 12 values (one per month, indexed 0-11)
-                    // month.month is the month index (0-11) which should match the breakdown index
-                    const monthIndex = month.month !== undefined ? month.month : idx;
+                  .reverse()
+                  .map((month) => {
+                    // Use originalIndex (position in the monthlySummary array) for monthlyBreakdown lookups
+                    // This matches how the API builds the array: index 0 = oldest month, 11 = newest
+                    const monthIndex = month.originalIndex;
                     const isLast12Months = selectedYear === 'last12months';
-                    
+
                     const monthCategories = analysis.categoryStats
                       .filter(cat => {
                         // Check if this category has data for this month
@@ -818,14 +956,14 @@ export default function SpendingAnalysisView() {
                       })
                       .sort((a, b) => b.amount - a.amount);
 
-                    const isExpanded = expandedMonth === idx;
+                    const isExpanded = expandedMonth === month.originalIndex;
                     
                     return (
-                      <div key={idx}>
+                      <div key={month.originalIndex}>
                         {/* Month Row */}
                         <div
                           onClick={() => {
-                            setExpandedMonth(isExpanded ? null : idx);
+                            setExpandedMonth(isExpanded ? null : month.originalIndex);
                             setExpandedCategory(null);
                             setSelectedCategoryInMonth(null); // Reset category selection when collapsing/expanding month
                           }}
@@ -908,7 +1046,7 @@ export default function SpendingAnalysisView() {
                                 {monthCategories.map((catData) => {
                                   const maxAmount = Math.max(...monthCategories.map(c => c.amount));
                                   const barWidth = maxAmount > 0 ? (catData.amount / maxAmount) * 100 : 0;
-                                  const isCategorySelected = selectedCategoryInMonth?.monthIndex === idx && selectedCategoryInMonth?.category === catData.category;
+                                  const isCategorySelected = selectedCategoryInMonth?.monthIndex === month.originalIndex && selectedCategoryInMonth?.category === catData.category;
                                   
                                   // Find the full category stats to get transactions
                                   const fullCategoryStats = analysis.categoryStats.find(cat => cat.category === catData.category);
@@ -937,7 +1075,7 @@ export default function SpendingAnalysisView() {
                                       periodStart.setHours(0, 0, 0, 0);
                                       
                                       const targetMonth = new Date(periodStart);
-                                      targetMonth.setMonth(targetMonth.getMonth() + idx);
+                                      targetMonth.setMonth(targetMonth.getMonth() + month.originalIndex);
                                       
                                       return localTxnDate.getMonth() === targetMonth.getMonth() && 
                                              localTxnDate.getFullYear() === targetMonth.getFullYear();
@@ -955,7 +1093,7 @@ export default function SpendingAnalysisView() {
                                           e.stopPropagation();
                                           const newSelection = isCategorySelected 
                                             ? null 
-                                            : { monthIndex: idx, category: catData.category };
+                                            : { monthIndex: month.originalIndex, category: catData.category };
                                           setSelectedCategoryInMonth(newSelection);
                                         }}
                                         style={{
@@ -1042,7 +1180,7 @@ export default function SpendingAnalysisView() {
                                           </div>
                                           {monthTransactions.map((txn, tIdx) => (
                                             <div
-                                              key={txn.id || `txn-${idx}-${catData.category}-${tIdx}`}
+                                              key={txn.id || `txn-${month.originalIndex}-${catData.category}-${tIdx}`}
                                               style={{
                                                 display: 'flex',
                                                 justifyContent: 'space-between',
@@ -1120,121 +1258,213 @@ export default function SpendingAnalysisView() {
             </div>
           )}
 
-          {/* Monthly Table View */}
-          {viewMode === 'monthly' && (
-            <div style={{
-              background: 'white',
-              borderRadius: '12px',
-              border: '1px solid #e5e7eb',
-              overflow: 'hidden',
-            }}>
+          {/* Budget Check View - This Month vs Last Month */}
+          {viewMode === 'monthly' && (() => {
+            const monthsWithData = analysis.monthlySummary
+              .map((m, i) => ({ ...m, originalIndex: i }))
+              .filter(m => m.transactionCount > 0);
+            const thisMonth = monthsWithData[monthsWithData.length - 1] || null;
+            const lastMonth = monthsWithData[monthsWithData.length - 2] || null;
+
+            const categoryComparison = analysis.categoryStats
+              .filter(cat => cat.isExpense && cat.category !== 'Transfer')
+              .map(cat => {
+                const thisAmt = thisMonth ? (cat.monthlyBreakdown[thisMonth.originalIndex] || 0) : 0;
+                const lastAmt = lastMonth ? (cat.monthlyBreakdown[lastMonth.originalIndex] || 0) : 0;
+                const change = lastAmt > 0 ? ((thisAmt - lastAmt) / lastAmt) * 100 : (thisAmt > 0 ? 100 : 0);
+                return { category: cat.category, thisMonth: thisAmt, lastMonth: lastAmt, changePercent: change };
+              })
+              .filter(c => c.thisMonth > 0 || c.lastMonth > 0)
+              .sort((a, b) => b.thisMonth - a.thisMonth);
+
+            if (!thisMonth) {
+              return (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+                  No transaction data available yet.
+                </div>
+              );
+            }
+
+            return (
               <div style={{
-                padding: '20px',
-                borderBottom: '1px solid #e5e7eb',
-                background: '#f9fafb',
+                background: 'white',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
+                overflow: 'hidden',
               }}>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
-                  Monthly Summary
-                </h3>
-              </div>
-              
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
-                  <thead>
-                    <tr style={{ background: '#f9fafb' }}>
-                      <th style={{ padding: '12px 20px', textAlign: 'left', fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Month</th>
-                      <th style={{ padding: '12px 20px', textAlign: 'right', fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Expenses</th>
-                      <th style={{ padding: '12px 20px', textAlign: 'right', fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Income</th>
-                      <th style={{ padding: '12px 20px', textAlign: 'right', fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Net</th>
-                      <th style={{ padding: '12px 20px', textAlign: 'left', fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Top Categories</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analysis.monthlySummary.map((month, idx) => (
-                      <tr 
-                        key={month.month}
-                        style={{ 
+                {/* Header: Two month totals side by side */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: lastMonth ? '1fr 1fr' : '1fr',
+                  borderBottom: '1px solid #e5e7eb',
+                }}>
+                  <div style={{ padding: '20px', borderRight: lastMonth ? '1px solid #e5e7eb' : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '700', fontSize: '16px' }}>{thisMonth.monthName}</div>
+                      <span style={{
+                        padding: '2px 8px',
+                        background: '#dbeafe',
+                        color: '#1d4ed8',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                      }}>In Progress</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '24px' }}>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>Expenses</div>
+                        <div style={{ fontSize: '22px', fontWeight: '700', color: '#ef4444' }}>{formatCurrency(thisMonth.totalExpenses)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>Income</div>
+                        <div style={{ fontSize: '22px', fontWeight: '700', color: '#10b981' }}>{formatCurrency(thisMonth.totalIncome)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>Net</div>
+                        <div style={{ fontSize: '22px', fontWeight: '700', color: thisMonth.netChange >= 0 ? '#10b981' : '#ef4444' }}>
+                          {thisMonth.netChange >= 0 ? '+' : ''}{formatCurrency(thisMonth.netChange)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {lastMonth && (
+                    <div style={{ padding: '20px' }}>
+                      <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '12px' }}>{lastMonth.monthName}</div>
+                      <div style={{ display: 'flex', gap: '24px' }}>
+                        <div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Expenses</div>
+                          <div style={{ fontSize: '22px', fontWeight: '700', color: '#ef4444' }}>{formatCurrency(lastMonth.totalExpenses)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Income</div>
+                          <div style={{ fontSize: '22px', fontWeight: '700', color: '#10b981' }}>{formatCurrency(lastMonth.totalIncome)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Net</div>
+                          <div style={{ fontSize: '22px', fontWeight: '700', color: lastMonth.netChange >= 0 ? '#10b981' : '#ef4444' }}>
+                            {lastMonth.netChange >= 0 ? '+' : ''}{formatCurrency(lastMonth.netChange)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Category-by-category comparison */}
+                <div style={{ padding: '20px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#374151' }}>
+                    Category Comparison
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    {thisMonth.monthName} vs {lastMonth ? lastMonth.monthName : 'N/A'}
+                  </p>
+                </div>
+
+                {/* Column headers */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 120px 120px 100px',
+                  gap: '12px',
+                  padding: '10px 20px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  color: '#6b7280',
+                  borderBottom: '1px solid #f3f4f6',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}>
+                  <div>Category</div>
+                  <div style={{ textAlign: 'right' }}>{thisMonth.shortName}</div>
+                  <div style={{ textAlign: 'right' }}>{lastMonth ? lastMonth.shortName : '-'}</div>
+                  <div style={{ textAlign: 'right' }}>Change</div>
+                </div>
+
+                {/* Category rows */}
+                <div>
+                  {categoryComparison.map((cat) => {
+                    const isUp = cat.changePercent > 0;
+                    const isDown = cat.changePercent < 0;
+                    const isNew = cat.lastMonth === 0 && cat.thisMonth > 0;
+                    const isGone = cat.thisMonth === 0 && cat.lastMonth > 0;
+
+                    return (
+                      <div
+                        key={cat.category}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 120px 120px 100px',
+                          gap: '12px',
+                          alignItems: 'center',
+                          padding: '12px 20px',
                           borderBottom: '1px solid #f3f4f6',
-                          background: month.transactionCount === 0 ? '#fafafa' : 'white',
                         }}
                       >
-                        <td style={{ padding: '16px 20px' }}>
-                          <div style={{ fontWeight: '600' }}>{month.monthName}</div>
-                          <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                            {month.transactionCount} transactions
-                          </div>
-                        </td>
-                        <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                          <span style={{ fontWeight: '600', color: '#ef4444' }}>
-                            {month.totalExpenses > 0 ? formatCurrency(month.totalExpenses) : '-'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                          <span style={{ fontWeight: '600', color: '#10b981' }}>
-                            {month.totalIncome > 0 ? formatCurrency(month.totalIncome) : '-'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                          <span style={{ 
-                            fontWeight: '600', 
-                            color: month.netChange >= 0 ? '#10b981' : '#ef4444',
-                          }}>
-                            {month.transactionCount > 0 
-                              ? (month.netChange >= 0 ? '+' : '') + formatCurrency(month.netChange)
-                              : '-'
-                            }
-                          </span>
-                        </td>
-                        <td style={{ padding: '16px 20px' }}>
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            {month.topCategories.slice(0, 3).map((cat, cIdx) => (
-                              <span
-                                key={cIdx}
-                                style={{
-                                  padding: '4px 8px',
-                                  background: getCategoryColor(cat.category) + '20',
-                                  color: getCategoryColor(cat.category),
-                                  borderRadius: '4px',
-                                  fontSize: '11px',
-                                  fontWeight: '500',
-                                }}
-                              >
-                                {cat.category}: {formatCurrency(cat.total)}
-                              </span>
-                            ))}
-                            {month.topCategories.length === 0 && (
-                              <span style={{ color: '#9ca3af', fontSize: '12px' }}>No data</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ background: '#f9fafb', fontWeight: '600' }}>
-                      <td style={{ padding: '16px 20px' }}>
-                        Year Total
-                      </td>
-                      <td style={{ padding: '16px 20px', textAlign: 'right', color: '#ef4444' }}>
-                        {formatCurrency(analysis.summary.totalExpenses)}
-                      </td>
-                      <td style={{ padding: '16px 20px', textAlign: 'right', color: '#10b981' }}>
-                        {formatCurrency(analysis.summary.totalIncome)}
-                      </td>
-                      <td style={{ 
-                        padding: '16px 20px', 
-                        textAlign: 'right',
-                        color: analysis.summary.netChange >= 0 ? '#10b981' : '#ef4444',
-                      }}>
-                        {analysis.summary.netChange >= 0 ? '+' : ''}{formatCurrency(analysis.summary.netChange)}
-                      </td>
-                      <td style={{ padding: '16px 20px' }}></td>
-                    </tr>
-                  </tfoot>
-                </table>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{
+                            width: '10px',
+                            height: '10px',
+                            borderRadius: '3px',
+                            background: getCategoryColor(cat.category),
+                            flexShrink: 0,
+                          }} />
+                          <span style={{ fontSize: '14px', fontWeight: '500' }}>{cat.category}</span>
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '600' }}>
+                          {cat.thisMonth > 0 ? formatCurrency(cat.thisMonth) : '-'}
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', color: '#6b7280' }}>
+                          {cat.lastMonth > 0 ? formatCurrency(cat.lastMonth) : '-'}
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600' }}>
+                          {isNew ? (
+                            <span style={{ color: '#6b7280' }}>New</span>
+                          ) : isGone ? (
+                            <span style={{ color: '#10b981' }}>Gone</span>
+                          ) : lastMonth ? (
+                            <span style={{ color: isUp ? '#ef4444' : isDown ? '#10b981' : '#6b7280' }}>
+                              {isUp ? '\u2191' : isDown ? '\u2193' : '-'} {Math.abs(Math.round(cat.changePercent))}%
+                            </span>
+                          ) : (
+                            <span style={{ color: '#6b7280' }}>-</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Totals footer */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 120px 120px 100px',
+                  gap: '12px',
+                  padding: '14px 20px',
+                  background: '#f9fafb',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                }}>
+                  <div>Total Expenses</div>
+                  <div style={{ textAlign: 'right', color: '#ef4444' }}>
+                    {formatCurrency(thisMonth.totalExpenses)}
+                  </div>
+                  <div style={{ textAlign: 'right', color: '#ef4444' }}>
+                    {lastMonth ? formatCurrency(lastMonth.totalExpenses) : '-'}
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    {lastMonth && lastMonth.totalExpenses > 0 ? (() => {
+                      const pct = ((thisMonth.totalExpenses - lastMonth.totalExpenses) / lastMonth.totalExpenses) * 100;
+                      const isUp = pct > 0;
+                      return (
+                        <span style={{ color: isUp ? '#ef4444' : '#10b981' }}>
+                          {isUp ? '\u2191' : '\u2193'} {Math.abs(Math.round(pct))}%
+                        </span>
+                      );
+                    })() : '-'}
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Category Comparison Chart */}
           {(() => {
