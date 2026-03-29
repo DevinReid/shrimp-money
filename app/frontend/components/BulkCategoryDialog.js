@@ -254,61 +254,48 @@ export default function BulkCategoryDialog({
           style={{
             padding: '20px',
             borderBottom: '1px solid #e5e7eb',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
           }}
         >
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#111827' }}>
-            Apply Category to Similar Transactions?
-          </h3>
-          <button
-            onClick={onClose}
-            disabled={applying}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              fontSize: '24px',
-              color: '#6b7280',
-              cursor: applying ? 'not-allowed' : 'pointer',
-              padding: '0',
-              width: '28px',
-              height: '28px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: '4px',
-            }}
-            onMouseEnter={(e) => e.target.style.background = '#f3f4f6'}
-            onMouseLeave={(e) => e.target.style.background = 'transparent'}
-          >
-            ×
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#111827' }}>
+              Category Saved
+            </h3>
+            <button
+              onClick={onClose}
+              disabled={applying}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                fontSize: '24px',
+                color: '#6b7280',
+                cursor: applying ? 'not-allowed' : 'pointer',
+                padding: '0',
+                width: '28px',
+                height: '28px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '4px',
+              }}
+              onMouseEnter={(e) => e.target.style.background = '#f3f4f6'}
+              onMouseLeave={(e) => e.target.style.background = 'transparent'}
+            >
+              ×
+            </button>
+          </div>
+          <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#059669' }}>
+            This transaction has been categorized as "<strong>{category}</strong>".
+            {matchingTransactions.length > 0
+              ? ' Want to apply it to similar transactions too?'
+              : ''}
+          </p>
         </div>
 
         {/* Content */}
         <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
-          <p style={{ margin: '0 0 16px 0', color: '#6b7280', fontSize: '14px' }}>
-            We found <strong>{matchingTransactions.length}</strong> similar uncategorized transaction{matchingTransactions.length !== 1 ? 's' : ''} using fuzzy matching.
-          </p>
           {matchingTransactions.length > 0 && (
-            <div style={{
-              padding: '10px',
-              background: '#f0f9ff',
-              border: '1px solid #bae6fd',
-              borderRadius: '6px',
-              marginBottom: '16px',
-              fontSize: '12px',
-              color: '#0369a1',
-            }}>
-              <strong>💡 Fuzzy Matching:</strong> Transactions are matched by merchant name similarity, not just exact matches. 
-              Match scores show confidence (🎯 = exact, ✓ = high confidence, ~ = similar).
-            </div>
-          )}
-
-          {category && (
             <p style={{ margin: '0 0 16px 0', color: '#6b7280', fontSize: '14px' }}>
-              Select which transactions should receive the category <strong>"{category}"</strong>:
+              Found <strong>{matchingTransactions.length}</strong> similar uncategorized transaction{matchingTransactions.length !== 1 ? 's' : ''}. Select which should also be categorized as "<strong>{category}</strong>":
             </p>
           )}
 
@@ -522,8 +509,8 @@ export default function BulkCategoryDialog({
               disabled={applying}
               style={{
                 padding: '10px 20px',
-                background: '#f3f4f6',
-                color: '#374151',
+                background: (selectedTransactionIds.size === 0 && !createRule) ? '#10b981' : '#f3f4f6',
+                color: (selectedTransactionIds.size === 0 && !createRule) ? 'white' : '#374151',
                 border: 'none',
                 borderRadius: '6px',
                 cursor: applying ? 'not-allowed' : 'pointer',
@@ -531,27 +518,27 @@ export default function BulkCategoryDialog({
                 fontWeight: '500',
               }}
             >
-              {matchingTransactions.length === 0 && !createRule ? 'Close' : 'Cancel'}
+              {(selectedTransactionIds.size === 0 && !createRule) ? 'Done' : 'Skip'}
             </button>
-            {(matchingTransactions.length > 0 || createRule) && (
+            {(selectedTransactionIds.size > 0 || createRule) && (
               <button
                 onClick={handleApply}
-                disabled={applying || loading || !category || (selectedTransactionIds.size === 0 && !createRule)}
+                disabled={applying || loading || !category}
                 style={{
                   padding: '10px 20px',
-                  background: applying || loading || (selectedTransactionIds.size === 0 && !createRule) ? '#9ca3af' : '#667eea',
+                  background: applying || loading ? '#9ca3af' : '#667eea',
                   color: 'white',
                   border: 'none',
                   borderRadius: '6px',
-                  cursor: applying || loading || (selectedTransactionIds.size === 0 && !createRule) ? 'not-allowed' : 'pointer',
+                  cursor: applying || loading ? 'not-allowed' : 'pointer',
                   fontSize: '14px',
                   fontWeight: '500',
                 }}
               >
                 {applying ? 'Applying...' : (
-                  selectedTransactionIds.size > 0 
-                    ? `Apply to ${selectedTransactionIds.size} Transaction${selectedTransactionIds.size !== 1 ? 's' : ''}${createRule ? ' + Create Rule' : ''}`
-                    : createRule ? 'Create Rule Only' : 'Apply'
+                  selectedTransactionIds.size > 0
+                    ? `Apply to ${selectedTransactionIds.size} Similar${createRule ? ' + Create Rule' : ''}`
+                    : 'Create Rule Only'
                 )}
               </button>
             )}

@@ -108,7 +108,15 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
   }, []);
 
   const handleCategoryChange = useCallback((transactionId, newCategory) => {
-    // Don't remove immediately - the bulk dialog will handle removal
+    // Remove from the uncategorized list immediately since the API already saved it
+    if (newCategory && newCategory !== 'Uncategorized') {
+      setTransactions(prev => prev.filter(t => t.transaction_id !== transactionId));
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(transactionId);
+        return next;
+      });
+    }
   }, []);
 
   const handleNoteChange = useCallback((transactionId, newNote) => {

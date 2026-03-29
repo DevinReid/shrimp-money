@@ -1162,6 +1162,7 @@ export default function PlaidApp() {
           merchantName={bulkDialogState.merchantName}
           transactionName={bulkDialogState.transactionName}
           category={bulkDialogState.category}
+          onBulkApply={handleRulesApplied}
           onRulesApplied={handleRulesApplied}
         />
       </main>
