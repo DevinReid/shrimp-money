@@ -228,3 +228,26 @@ model PlaidDismissedSuggestion {
   @@unique([merchant, category])
   @@map("plaid_dismissed_suggestions")
 }
+
+// Forecast snapshots — one row captured per (day, horizon, mode) each time the
+// forecast runs, so we can build a real prediction-vs-actual track record over
+// time. Purely additive; never read by the forecast itself.
+model PlaidForecastSnapshot {
+  id                   String   @id @default(cuid())
+  snapshotDate         DateTime // Day the forecast was generated (local midnight)
+  horizonDays          Int      // Forecast horizon in days (e.g. 30, 60, 360)
+  useMax               Boolean  @default(false) // "max spending" mode vs average
+  startingBalance      Float
+  endingBalance        Float
+  lowestBalance        Float
+  projectedIncome      Float    // Total projected income over the horizon
+  projectedExpenses    Float    // Total projected expenses over the horizon
+  netChange            Float    // endingBalance - startingBalance
+  transactionsAnalyzed Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([snapshotDate, horizonDays, useMax])
+  @@index([snapshotDate])
+  @@map("plaid_forecast_snapshots")
+}

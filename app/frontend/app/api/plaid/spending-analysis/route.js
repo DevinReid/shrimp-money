@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireMFA } from '@/lib/middleware/auth';
 const prisma = require('@/lib/prisma');
+const { loadMergedTransactions } = require('@/lib/transactionStore');
 
 /**
  * GET /api/plaid/spending-analysis
@@ -28,132 +29,14 @@ export async function GET(req) {
       throw new Error('Database not available');
     }
 
+    // Single source of truth for transactions — see lib/transactionStore.js.
+    // Merges the live blob + normalized table (deduped) with categories filled,
+    // so this matches exactly what the forecast and other views compute on.
     let allTransactions = [];
-    const transactionMap = new Map(); // Use Map to deduplicate by transaction_id
-    
     try {
-      // First, try to get transactions from the normalized PlaidTransaction table
-      try {
-        const normalizedTransactions = await prisma.plaidTransaction.findMany({
-          orderBy: { date: 'desc' },
-        });
-        
-        // Get all categories to fill in any missing userCategory fields
-        let categoryMapForNormalized = {};
-        if (prisma && prisma.plaidTransactionCategory) {
-          try {
-            const transactionIds = normalizedTransactions.map(t => t.transactionId);
-            const categories = await prisma.plaidTransactionCategory.findMany({
-              where: { transactionId: { in: transactionIds } },
-            });
-            categoryMapForNormalized = categories.reduce((acc, cat) => {
-              acc[cat.transactionId] = cat.category;
-              return acc;
-            }, {});
-          } catch (catError) {
-            console.warn('⚠️ Could not load categories for normalized transactions:', catError.message);
-          }
-        }
-        
-        // Convert normalized format to expected format
-        normalizedTransactions.forEach(t => {
-          const dateObj = t.date instanceof Date ? t.date : new Date(t.date);
-          const dateStr = dateObj.toISOString().split('T')[0];
-          
-          // Use userCategory from table, or fall back to PlaidTransactionCategory if missing
-          const userCategory = t.userCategory || categoryMapForNormalized[t.transactionId] || null;
-          
-          transactionMap.set(t.transactionId, {
-            transaction_id: t.transactionId,
-            account_id: t.accountId,
-            name: t.name,
-            merchant_name: t.merchantName,
-            amount: t.amount,
-            date: dateStr,
-            dateObj: dateObj,
-            iso_currency_code: t.isoCurrencyCode,
-            pending: t.pending,
-            transaction_code: t.transactionCode,
-            userCategory: userCategory,
-          });
-        });
-        
-        console.log(`✅ Loaded ${normalizedTransactions.length} transactions from normalized PlaidTransaction table`);
-        const withCategories = normalizedTransactions.filter(t => t.userCategory || categoryMapForNormalized[t.transactionId]).length;
-        console.log(`   ${withCategories} transactions have categories (${withCategories} from table, ${Object.keys(categoryMapForNormalized).length - normalizedTransactions.filter(t => t.userCategory).length} from category table)`);
-      } catch (normalizedError) {
-        console.warn('⚠️ Could not read from normalized table:', normalizedError.message);
-      }
-      
-      // Also check PlaidTransactionData (JSON blob) for any missing transactions
-      // This ensures we get ALL transactions, including recent ones that might not be migrated yet
-      try {
-        if (prisma && prisma.plaidTransactionData) {
-          const transactionDataRecords = await prisma.plaidTransactionData.findMany();
-          
-          for (const record of transactionDataRecords) {
-            let transactions = [];
-            if (record.transactions) {
-              if (Array.isArray(record.transactions)) {
-                transactions = record.transactions;
-              } else if (record.transactions.transactions && Array.isArray(record.transactions.transactions)) {
-                transactions = record.transactions.transactions;
-              }
-            }
-            
-            // Get categories for these transactions
-            let categoryMap = {};
-            if (prisma && prisma.plaidTransactionCategory) {
-              try {
-                const transactionIds = transactions.map(t => t.transaction_id);
-                const categories = await prisma.plaidTransactionCategory.findMany({
-                  where: { transactionId: { in: transactionIds } },
-                });
-                categoryMap = categories.reduce((acc, cat) => {
-                  acc[cat.transactionId] = cat.category;
-                  return acc;
-                }, {});
-              } catch (catError) {
-                console.warn('⚠️ Could not load categories:', catError.message);
-              }
-            }
-            
-            // Add transactions that aren't already in the map
-            transactions.forEach(txn => {
-              if (!transactionMap.has(txn.transaction_id)) {
-                const dateObj = txn.date ? new Date(txn.date) : new Date();
-                const dateStr = dateObj.toISOString().split('T')[0];
-                
-                transactionMap.set(txn.transaction_id, {
-                  transaction_id: txn.transaction_id,
-                  account_id: txn.account_id || '',
-                  name: txn.name || '',
-                  merchant_name: txn.merchant_name || null,
-                  amount: parseFloat(txn.amount) || 0,
-                  date: dateStr,
-                  dateObj: dateObj,
-                  iso_currency_code: txn.iso_currency_code || null,
-                  pending: txn.pending || false,
-                  transaction_code: txn.transaction_code || null,
-                  userCategory: categoryMap[txn.transaction_id] || null,
-                });
-              }
-            });
-            
-            console.log(`✅ Added ${transactions.length} transactions from PlaidTransactionData (itemId: ${record.itemId})`);
-          }
-        }
-      } catch (blobError) {
-        console.warn('⚠️ Could not read from PlaidTransactionData:', blobError.message);
-      }
-      
-      // Convert map to array
-      allTransactions = Array.from(transactionMap.values());
-      
-      console.log(`✅ Total unique transactions loaded: ${allTransactions.length}`);
-      console.log(`   From normalized table: ${transactionMap.size > 0 ? 'yes' : 'no'}`);
-      console.log(`   From JSON blob: ${transactionMap.size > 0 ? 'yes' : 'no'}`);
-      
+      const result = await loadMergedTransactions(prisma);
+      allTransactions = result.transactions;
+      console.log(`✅ Spending analysis: ${allTransactions.length} transactions (shared store)`);
     } catch (dbError) {
       console.error('❌ Error reading from database:', dbError.message);
       throw new Error(`Failed to load transactions: ${dbError.message}`);

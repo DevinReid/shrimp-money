@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireMFA } from '@/lib/middleware/auth';
 import { readItems, readAccountData, readTransactionData } from '@/lib/plaid';
 const prisma = require('@/lib/prisma');
+const { loadMergedTransactions } = require('@/lib/transactionStore');
 
 /**
  * Format a date as YYYY-MM-DD using LOCAL time (not UTC)
@@ -297,101 +298,42 @@ export async function GET(req) {
     }
 
     // Load actual transactions from spending analysis (PlaidTransaction table)
-    // Use last 12 months to match spending analysis calculation
-    // Load transactions from BOTH the normalized table AND the JSON blob, deduped
-    // by transaction_id. The normalized table can lag behind (the blob is updated
-    // live on every Plaid refresh, while the table relies on a migration that may
-    // not have run recently), so reading the table alone makes the forecast miss
-    // recent spending. This mirrors how spending-analysis loads its data so the
-    // two views compute on the same dataset.
+    // Load the full transaction set from the shared store (live blob + table,
+    // deduped, categories filled) so the forecast computes on the SAME data as
+    // every other view. See lib/transactionStore.js.
     let allTransactions = [];
     try {
       const twelveMonthsAgo = new Date();
       twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
       twelveMonthsAgo.setHours(0, 0, 0, 0);
 
-      const transactionMap = new Map();
+      const { transactions } = await loadMergedTransactions(prisma);
 
-      // Category assignments live in their own table; use them to fill in
-      // categories for any transaction missing a userCategory (esp. blob rows).
-      let categoryMap = {};
-      if (prisma && prisma.plaidTransactionCategory) {
-        try {
-          const cats = await prisma.plaidTransactionCategory.findMany();
-          categoryMap = cats.reduce((acc, c) => { acc[c.transactionId] = c.category; return acc; }, {});
-        } catch (catError) {
-          console.warn('⚠️ Could not load category assignments:', catError.message);
-        }
-      }
-
-      // Classify income vs expense (same logic as before) and add to the map.
-      const addTxn = (id, accountId, name, merchantName, amount, dateObj, rawUserCategory) => {
-        if (!id || transactionMap.has(id)) return;
-        const userCategory = rawUserCategory || categoryMap[id] || null;
-        const isUserMarkedIncome = userCategory === 'Income';
-        const hasUserCategory = userCategory && userCategory !== 'Uncategorized';
-        // If categorized, respect it (Income => income, anything else => expense).
-        // If uncategorized, fall back to amount sign (Plaid: positive = expense).
-        const isExpense = isUserMarkedIncome ? false : (hasUserCategory ? true : amount > 0);
-        const isIncome = isUserMarkedIncome || (!hasUserCategory && amount < 0);
-        transactionMap.set(id, {
-          transaction_id: id,
-          account_id: accountId,
-          name: name,
-          merchant_name: merchantName,
-          amount: amount,
-          date: formatLocalDate(dateObj),
-          userCategory,
-          isExpense,
-          isIncome,
+      // Keep the last 12 months and classify income vs expense:
+      // Income category => income; any other category => expense; uncategorized
+      // falls back to amount sign (Plaid: positive = expense).
+      allTransactions = transactions
+        .filter(t => t.dateObj >= twelveMonthsAgo)
+        .map(t => {
+          const userCategory = t.userCategory || null;
+          const isUserMarkedIncome = userCategory === 'Income';
+          const hasUserCategory = userCategory && userCategory !== 'Uncategorized';
+          const isExpense = isUserMarkedIncome ? false : (hasUserCategory ? true : t.amount > 0);
+          const isIncome = isUserMarkedIncome || (!hasUserCategory && t.amount < 0);
+          return {
+            transaction_id: t.transaction_id,
+            account_id: t.account_id,
+            name: t.name,
+            merchant_name: t.merchant_name,
+            amount: t.amount,
+            date: formatLocalDate(t.dateObj),
+            userCategory,
+            isExpense,
+            isIncome,
+          };
         });
-      };
 
-      // 1) Normalized table (has userCategory directly)
-      if (prisma && prisma.plaidTransaction) {
-        try {
-          const normalized = await prisma.plaidTransaction.findMany({ orderBy: { date: 'desc' } });
-          normalized.forEach(t => {
-            addTxn(t.transactionId, t.accountId, t.name, t.merchantName, t.amount,
-              t.date instanceof Date ? t.date : new Date(t.date), t.userCategory);
-          });
-          console.log(`✅ Forecast: ${normalized.length} from normalized table`);
-        } catch (normErr) {
-          console.warn('⚠️ Could not read normalized table:', normErr.message);
-        }
-      }
-
-      // 2) JSON blob — merge in anything not already present (recent, un-migrated rows)
-      if (prisma && prisma.plaidTransactionData) {
-        try {
-          const records = await prisma.plaidTransactionData.findMany();
-          let merged = 0;
-          for (const record of records) {
-            const arr = Array.isArray(record.transactions)
-              ? record.transactions
-              : (record.transactions && Array.isArray(record.transactions.transactions)
-                ? record.transactions.transactions
-                : []);
-            arr.forEach(txn => {
-              if (!transactionMap.has(txn.transaction_id)) {
-                addTxn(txn.transaction_id, txn.account_id || '', txn.name || '',
-                  txn.merchant_name || null, parseFloat(txn.amount) || 0,
-                  txn.date ? new Date(txn.date) : new Date(), null);
-                merged++;
-              }
-            });
-          }
-          console.log(`✅ Forecast: merged ${merged} extra transactions from blob`);
-        } catch (blobErr) {
-          console.warn('⚠️ Could not read transaction blob:', blobErr.message);
-        }
-      }
-
-      // Window to the last 12 months (unchanged forecast input window)
-      allTransactions = Array.from(transactionMap.values())
-        .filter(t => new Date(t.date) >= twelveMonthsAgo);
-
-      console.log(`✅ Forecast: ${allTransactions.length} transactions in last 12 months (table+blob merged)`);
+      console.log(`✅ Forecast: ${allTransactions.length} transactions in last 12 months (shared store)`);
     } catch (txError) {
       console.log('⚠️ Could not load transactions for pattern analysis:', txError.message);
     }
@@ -1137,6 +1079,39 @@ export async function GET(req) {
       });
     } else {
       console.log('⚠️ JAN 15 NOT FOUND in dailyProjections');
+    }
+
+    // Record this forecast run so we can compare predictions vs actuals over
+    // time. One row per (day, horizon, mode); upsert keeps it to one per day.
+    // Wrapped so a snapshot failure never affects the forecast response.
+    if (prisma && prisma.plaidForecastSnapshot) {
+      try {
+        const snapshotDate = new Date(today);
+        snapshotDate.setHours(0, 0, 0, 0);
+        const values = {
+          startingBalance: Math.round(startingBalance * 100) / 100,
+          endingBalance: Math.round(runningBalance * 100) / 100,
+          lowestBalance: Math.round(lowestBalance * 100) / 100,
+          projectedIncome: Math.round(totalProjectedIncome * 100) / 100,
+          projectedExpenses: Math.round(totalProjectedExpenses * 100) / 100,
+          netChange: Math.round((runningBalance - startingBalance) * 100) / 100,
+          transactionsAnalyzed: allTransactions.length,
+        };
+        await prisma.plaidForecastSnapshot.upsert({
+          where: {
+            snapshotDate_horizonDays_useMax: {
+              snapshotDate,
+              horizonDays: daysToForecast,
+              useMax,
+            },
+          },
+          update: values,
+          create: { snapshotDate, horizonDays: daysToForecast, useMax, ...values },
+        });
+        console.log('📸 Forecast snapshot saved');
+      } catch (snapErr) {
+        console.warn('⚠️ Could not save forecast snapshot:', snapErr.message);
+      }
     }
 
     return NextResponse.json({
