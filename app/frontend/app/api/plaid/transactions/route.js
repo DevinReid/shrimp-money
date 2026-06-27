@@ -3,6 +3,7 @@ import { requireMFA } from '@/lib/middleware/auth';
 import { client, readItems, saveTransactionData, readTransactionData } from '@/lib/plaid';
 const prisma = require('@/lib/prisma');
 const { buildCategoryHistory, fuzzyMatchTransaction } = require('@/lib/merchantMatcher');
+const { loadMergedTransactions } = require('@/lib/transactionStore');
 
 export async function GET(req) {
   const authResult = requireMFA(req);
@@ -48,68 +49,24 @@ export async function GET(req) {
     )[0];
     const access_token = item.access_token;
 
-    // Try to get cached data from database first
+    // Try to get cached data from the shared transaction store first
+    // (single source of truth — see lib/transactionStore.js — so this list
+    // matches the forecast, spending analysis, and uncategorized count).
     if (!forceRefresh && prisma) {
       try {
-        const cachedData = await prisma.plaidTransactionData.findUnique({
-          where: { itemId: item.item_id },
-        });
-
-        if (cachedData && cachedData.transactions) {
-          console.log('📦 Returning cached transaction data from database');
-          // Handle both array format and object format
-          const transactions = Array.isArray(cachedData.transactions) 
-            ? cachedData.transactions 
-            : (cachedData.transactions.transactions || []);
-          
-          // Get categories and notes for these transactions
-          let categoryMap = {};
-          let noteMap = {};
-          if (prisma && prisma.plaidTransactionCategory) {
-            try {
-              const transactionIds = transactions.map(t => t.transaction_id);
-              
-              // Get categories
-              const categories = await prisma.plaidTransactionCategory.findMany({
-                where: { transactionId: { in: transactionIds } },
-              });
-              categoryMap = categories.reduce((acc, cat) => {
-                acc[cat.transactionId] = cat.category;
-                return acc;
-              }, {});
-              
-              // Get notes
-              if (prisma.plaidTransactionNote) {
-                const notes = await prisma.plaidTransactionNote.findMany({
-                  where: { transactionId: { in: transactionIds } },
-                });
-                noteMap = notes.reduce((acc, note) => {
-                  acc[note.transactionId] = note.note;
-                  return acc;
-                }, {});
-              }
-            } catch (catError) {
-              console.log('⚠️ Could not load categories/notes:', catError.message);
-            }
-          }
-
-          // Merge category and note data into transactions
-          const transactionsWithCategories = transactions.map(t => ({
-            ...t,
-            userCategory: categoryMap[t.transaction_id] || null,
-            userNote: noteMap[t.transaction_id] || null,
-          }));
-          
+        const { transactions, lastFetched, totalTransactions } = await loadMergedTransactions(prisma);
+        if (transactions.length > 0) {
+          console.log('📦 Returning transactions from shared store');
           return NextResponse.json({
-            accounts: Array.isArray(cachedData.transactions) ? [] : (cachedData.transactions.accounts || []),
-            transactions: transactionsWithCategories,
-            total_transactions: cachedData.totalTransactions || transactions.length,
+            accounts: [],
+            transactions,
+            total_transactions: totalTransactions,
             cached: true,
-            lastFetched: cachedData.lastFetched,
+            lastFetched,
           });
         }
       } catch (dbError) {
-        console.log('⚠️ Could not read from database:', dbError.message);
+        console.log('⚠️ Could not read from shared store:', dbError.message);
       }
     }
 
