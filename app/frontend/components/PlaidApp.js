@@ -569,21 +569,7 @@ export default function PlaidApp() {
                   transaction.amount,
                   transaction.date
                 )}
-                style={{
-                  padding: '4px 8px',
-                  background: '#fee2e2',
-                  border: '1px solid #fecaca',
-                  borderRadius: '6px',
-                  color: '#991b1b',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '24px',
-                  height: '24px',
-                }}
+                className="txn-delete-btn"
                 title="Delete this transaction permanently"
               >
                 ×
@@ -827,16 +813,6 @@ export default function PlaidApp() {
                   updateScrollIndicators();
                 }
               }}
-              style={{
-                display: 'flex',
-                gap: '0',
-                marginBottom: '0',
-                overflowX: 'auto',
-                WebkitOverflowScrolling: 'touch',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-                touchAction: 'pan-x',
-              }} 
               className="tabs-container desktop-tabs"
             >
               <button
@@ -1026,22 +1002,22 @@ export default function PlaidApp() {
 
                 {transactions && transactions.transactions && (
                   <section className="transactions-section">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <div className="transactions-section-header">
                       <h2 style={{ margin: 0 }}>
                         Transactions
                         {transactions.total_transactions > 100 && (
-                          <span style={{ fontSize: '14px', fontWeight: 'normal', color: '#6b7280', marginLeft: '10px' }}>
+                          <span className="transactions-count-inline">
                             ({transactions.total_transactions} total - showing all)
                           </span>
                         )}
                       </h2>
                       {transactions.total_transactions > 100 && (
-                        <div style={{ fontSize: '12px', color: '#6b7280', padding: '6px 12px', background: '#f3f4f6', borderRadius: '6px' }}>
+                        <div className="transactions-dataset-badge">
                           Large dataset - scroll to see all
                         </div>
                       )}
                     </div>
-                    <div className="transactions-list" style={{ maxHeight: transactions.total_transactions > 50 ? '600px' : 'none', overflowY: transactions.total_transactions > 50 ? 'auto' : 'visible' }}>
+                    <div className="transactions-list">
                       {sortedTransactions.map((transaction) => (
                         <TransactionItem
                           key={transaction.transaction_id}

@@ -335,12 +335,12 @@
   }
 
   .app-header h1 {
-    font-size: 1.8rem;
-    margin-bottom: 0.25rem;
+    font-size: 1.55rem;
+    margin-bottom: 0.15rem;
   }
 
   .app-header p {
-    font-size: 0.95rem;
+    font-size: 0.85rem;
   }
 
   .header-user-info {
@@ -352,7 +352,7 @@
   }
 
   .app-header {
-    padding: 1rem 1.5rem;
+    padding: 0.85rem 1.25rem;
   }
 
   /* Hide desktop tabs on mobile */
@@ -814,6 +814,375 @@
   content: ' 🦐';
 }
 
+/* Transactions section header (moved off inline styles for responsiveness) */
+.transactions-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  gap: 12px;
+}
+
+.transactions-count-inline {
+  font-size: 14px;
+  font-weight: normal;
+  color: #6b7280;
+  margin-left: 10px;
+}
+
+.transactions-dataset-badge {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 6px 12px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Overview transaction delete button (class-based so tap target can grow on mobile) */
+.txn-delete-btn {
+  padding: 4px 8px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   🧾 TRANSACTION GRID TABLES (Uncategorized + All Transactions)
+   Desktop: grid table. Mobile: stacked cards (see @media below).
+   Grid template moved off inline styles so mobile can restack.
+═══════════════════════════════════════════════════════════ */
+.txn-table {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+.txn-table-header,
+.txn-row {
+  display: grid;
+  grid-template-columns: 1.5fr 0.8fr 0.8fr 1.3fr auto;
+  gap: 8px;
+  padding: 12px 10px;
+  align-items: center;
+}
+
+/* Uncategorized adds a leading checkbox column */
+.txn-table-header.has-select,
+.txn-row.has-select {
+  grid-template-columns: 40px 1.5fr 0.8fr 0.8fr 1.3fr auto;
+}
+
+.txn-table-header {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  font-weight: 600;
+  font-size: 14px;
+  color: #6b7280;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.txn-cell-amount {
+  text-align: right;
+}
+
+.txn-rows-scroll {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+/* View header (title + action buttons) for both transaction views */
+.txn-view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.txn-view-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Recurring "Manage Payments" table (grid moved off inline so mobile can restack) */
+.recurring-table-header,
+.recurring-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto;
+  gap: 15px;
+  padding: 12px 15px;
+  align-items: center;
+}
+
+.recurring-table-header {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  font-weight: 600;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* Mobile: turn the grid table rows into stacked cards */
+@media (max-width: 768px) {
+  /* Drop the full-bleed (-20px) that pushed content past the screen edge */
+  .txn-view-root {
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .txn-table-header {
+    display: none;
+  }
+
+  .txn-rows-scroll {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  .txn-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "name amount"
+      "date amount"
+      "actions actions";
+    gap: 4px 10px;
+    padding: 12px;
+  }
+
+  .txn-row.has-select {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "select name amount"
+      "select date amount"
+      "actions actions actions";
+  }
+
+  .txn-cell-select {
+    grid-area: select;
+    align-self: start;
+    padding-top: 2px;
+  }
+
+  .txn-cell-name {
+    grid-area: name;
+  }
+
+  .txn-cell-date {
+    grid-area: date;
+    align-self: center;
+  }
+
+  .txn-cell-amount {
+    grid-area: amount;
+    align-self: center;
+    text-align: right;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--shrimp-coral);
+  }
+
+  .txn-row .transaction-actions-mobile-grid {
+    grid-area: actions;
+    margin-top: 6px;
+  }
+
+  /* Stack the view header (title over buttons) and let buttons fill width */
+  .txn-view-header {
+    margin-bottom: 16px;
+  }
+
+  .txn-view-actions {
+    width: 100%;
+  }
+
+  .txn-view-actions > button,
+  .txn-view-actions > label {
+    flex: 1;
+    text-align: center;
+  }
+}
+
+/* Spending Analysis: wrap controls + full-width view-mode toggle on mobile */
+@media (max-width: 768px) {
+  /* Reclaim nested horizontal padding so the data tables have room to breathe */
+  .analysis-root {
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+  }
+
+  .analysis-controls {
+    flex-wrap: wrap;
+  }
+
+  /* KPIs: compact 2x2 tile grid instead of 4 giant stacked cards */
+  .analysis-kpis {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .analysis-kpi {
+    padding: 12px !important;
+    border-radius: 10px !important;
+  }
+
+  .analysis-kpi > div:nth-child(1) {
+    font-size: 11px !important;
+    margin-bottom: 2px !important;
+  }
+
+  .analysis-kpi > div:nth-child(2) {
+    font-size: 18px !important;
+  }
+
+  .analysis-kpi > div:nth-child(3) {
+    font-size: 10px !important;
+    margin-top: 2px !important;
+  }
+
+  /* Recent-months snapshot: stack the two months (was overflowing off-screen) */
+  .analysis-month-snapshot {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Recurring Payments: "By Category" card spans full width below the 2x2 tiles */
+  .recurring-bycat {
+    grid-column: 1 / -1;
+    padding: 14px !important;
+  }
+
+  /* Recurring sub-tabs: horizontal scroll strip instead of overflowing the screen */
+  .recurring-subtabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .recurring-subtabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .recurring-subtabs > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+  }
+
+  /* Manage Payments table → stacked cards */
+  .recurring-table-header {
+    display: none;
+  }
+
+  .recurring-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "name amount"
+      "category frequency"
+      "date date"
+      "actions actions";
+    gap: 6px 10px;
+    padding: 14px;
+  }
+
+  .recurring-cell-name {
+    grid-area: name;
+    font-size: 0.95rem;
+  }
+
+  .recurring-cell-category {
+    grid-area: category;
+  }
+
+  .recurring-cell-amount {
+    grid-area: amount;
+    text-align: right;
+    font-size: 1.05rem;
+    color: var(--shrimp-coral);
+  }
+
+  .recurring-cell-frequency {
+    grid-area: frequency;
+    text-align: right;
+  }
+
+  .recurring-cell-date {
+    grid-area: date;
+  }
+
+  .recurring-cell-date::before {
+    content: 'Next: ';
+    color: #9ca3af;
+  }
+
+  .recurring-cell-actions {
+    grid-area: actions;
+    margin-top: 6px;
+  }
+
+  .recurring-cell-actions > button {
+    flex: 1;
+  }
+
+  .analysis-viewmode {
+    width: 100%;
+  }
+
+  .analysis-viewmode > button {
+    flex: 1;
+  }
+
+  /* Budget Check: stack the two months instead of side-by-side (kept "Net" from clipping) */
+  .budget-months {
+    grid-template-columns: 1fr !important;
+  }
+
+  .budget-months > div:first-child {
+    border-right: none !important;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .budget-stats {
+    gap: 14px !important;
+  }
+
+  /* Comparison table: shrink the fixed number columns so all 4 fit on screen */
+  .budget-cmp-grid {
+    grid-template-columns: minmax(0, 1fr) 60px 60px 50px !important;
+    gap: 8px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* Let the category cell shrink and long names wrap instead of overlapping the amount */
+  .budget-cmp-grid > div {
+    min-width: 0;
+  }
+
+  .budget-cmp-grid > div:first-child span {
+    overflow-wrap: break-word;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════
    📱 RESPONSIVE STYLES 📱
 ═══════════════════════════════════════════════════════════ */
@@ -844,6 +1213,103 @@
     width: 100%;
     text-align: center;
   }
+
+  /* Transactions header: stack the count, drop the bulky "large dataset" badge */
+  .transactions-count-inline {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
+  .transactions-dataset-badge {
+    display: none;
+  }
+
+  /* Let the transaction list flow with the page instead of trapping scroll */
+  .transactions-list {
+    max-height: none;
+    overflow-y: visible;
+    padding-right: 0;
+  }
+
+  /* Bigger, finger-friendly delete target */
+  .txn-delete-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+    border-radius: 8px;
+  }
+
+  /* ── Mobile density: dial back the oversized cards/headings/amounts ── */
+  .data-section {
+    padding: 1rem;
+    border-radius: 16px;
+    /* CRITICAL: backdrop-filter creates a containing block that traps
+       position:fixed modals (they'd size to this tall section, not the
+       viewport, pushing the form off-screen). Disable it on mobile. */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .accounts-section,
+  .transactions-section {
+    margin-top: 1rem;
+  }
+
+  .accounts-section h2,
+  .transactions-section h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .accounts-grid {
+    gap: 0.75rem;
+  }
+
+  .account-card {
+    padding: 1rem;
+    border-radius: 14px;
+  }
+
+  .account-card h3 {
+    font-size: 1.05rem;
+  }
+
+  .balance-amount {
+    font-size: 1rem;
+  }
+
+  .balance {
+    padding: 0.5rem 0;
+  }
+
+  .balance-label {
+    font-size: 0.85rem;
+  }
+
+  .transaction-item {
+    padding: 0.65rem 0.85rem;
+    border-radius: 12px;
+    margin-bottom: 0.5rem;
+  }
+
+  .transaction-name {
+    font-size: 0.9rem;
+  }
+
+  .transaction-amount {
+    font-size: 1rem;
+  }
+
+  .transaction-date {
+    font-size: 0.75rem;
+    padding: 3px 8px;
+  }
+
+  .transaction-category {
+    font-size: 0.72rem;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -860,6 +1326,14 @@
   /* Tabs sit on top of the container */
   margin-left: 2rem;
   margin-right: 2rem;
+  /* Horizontal scroll behavior (moved off inline styles so .desktop-tabs
+     display:none can take effect on mobile) */
+  gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  touch-action: pan-x;
 }
 
 /* Scroll fade indicators */

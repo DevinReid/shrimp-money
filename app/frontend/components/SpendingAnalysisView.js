@@ -157,7 +157,7 @@ export default function SpendingAnalysisView() {
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div className="analysis-root" style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
         <div>
@@ -172,7 +172,7 @@ export default function SpendingAnalysisView() {
           </p>
         </div>
         
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div className="analysis-controls" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
@@ -200,7 +200,7 @@ export default function SpendingAnalysisView() {
             )}
           </select>
           
-          <div style={{
+          <div className="analysis-viewmode" style={{
             display: 'flex',
             background: '#f3f4f6',
             borderRadius: '6px',
@@ -298,13 +298,13 @@ export default function SpendingAnalysisView() {
       {analysis && (
         <>
           {/* Summary Cards */}
-          <div style={{
+          <div className="analysis-kpis" style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
             gap: '15px',
             marginBottom: '30px',
           }}>
-            <div style={{
+            <div className="analysis-kpi" style={{
               padding: '20px',
               background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
               borderRadius: '12px',
@@ -319,7 +319,7 @@ export default function SpendingAnalysisView() {
               </div>
             </div>
             
-            <div style={{
+            <div className="analysis-kpi" style={{
               padding: '20px',
               background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
               borderRadius: '12px',
@@ -334,7 +334,7 @@ export default function SpendingAnalysisView() {
               </div>
             </div>
             
-            <div style={{
+            <div className="analysis-kpi" style={{
               padding: '20px',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               borderRadius: '12px',
@@ -349,9 +349,9 @@ export default function SpendingAnalysisView() {
               </div>
             </div>
             
-            <div style={{
+            <div className="analysis-kpi" style={{
               padding: '20px',
-              background: analysis.summary.netChange >= 0 
+              background: analysis.summary.netChange >= 0
                 ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
                 : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
               borderRadius: '12px',
@@ -382,7 +382,7 @@ export default function SpendingAnalysisView() {
 
             return (
               <div style={{ marginBottom: '25px' }}>
-                <div style={{
+                <div className="analysis-month-snapshot" style={{
                   display: 'grid',
                   gridTemplateColumns: lastMonth ? '1fr 1fr' : '1fr',
                   gap: '15px',
@@ -1293,7 +1293,7 @@ export default function SpendingAnalysisView() {
                 overflow: 'hidden',
               }}>
                 {/* Header: Two month totals side by side */}
-                <div style={{
+                <div className="budget-months" style={{
                   display: 'grid',
                   gridTemplateColumns: lastMonth ? '1fr 1fr' : '1fr',
                   borderBottom: '1px solid #e5e7eb',
@@ -1310,7 +1310,7 @@ export default function SpendingAnalysisView() {
                         fontWeight: '600',
                       }}>In Progress</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '24px' }}>
+                    <div className="budget-stats" style={{ display: 'flex', gap: '24px' }}>
                       <div>
                         <div style={{ fontSize: '11px', color: '#6b7280' }}>Expenses</div>
                         <div style={{ fontSize: '22px', fontWeight: '700', color: '#ef4444' }}>{formatCurrency(thisMonth.totalExpenses)}</div>
@@ -1330,7 +1330,7 @@ export default function SpendingAnalysisView() {
                   {lastMonth && (
                     <div style={{ padding: '20px' }}>
                       <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '12px' }}>{lastMonth.monthName}</div>
-                      <div style={{ display: 'flex', gap: '24px' }}>
+                      <div className="budget-stats" style={{ display: 'flex', gap: '24px' }}>
                         <div>
                           <div style={{ fontSize: '11px', color: '#6b7280' }}>Expenses</div>
                           <div style={{ fontSize: '22px', fontWeight: '700', color: '#ef4444' }}>{formatCurrency(lastMonth.totalExpenses)}</div>
@@ -1361,7 +1361,7 @@ export default function SpendingAnalysisView() {
                 </div>
 
                 {/* Column headers */}
-                <div style={{
+                <div className="budget-cmp-grid" style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 120px 120px 100px',
                   gap: '12px',
@@ -1390,6 +1390,7 @@ export default function SpendingAnalysisView() {
                     return (
                       <div
                         key={cat.category}
+                        className="budget-cmp-grid"
                         style={{
                           display: 'grid',
                           gridTemplateColumns: '1fr 120px 120px 100px',
@@ -1434,7 +1435,7 @@ export default function SpendingAnalysisView() {
                 </div>
 
                 {/* Totals footer */}
-                <div style={{
+                <div className="budget-cmp-grid" style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 120px 120px 100px',
                   gap: '12px',

@@ -1038,13 +1038,13 @@ export default function SpendingForecastView() {
       {forecast && (
         <>
           {/* Summary Cards */}
-          <div style={{
+          <div className="analysis-kpis" style={{
             display: 'grid',
             gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: isMobile ? '12px' : '15px',
             marginBottom: isMobile ? '20px' : '30px',
           }}>
-            <div style={{
+            <div className="analysis-kpi" style={{
               padding: isMobile ? '16px' : '20px',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               borderRadius: '12px',
@@ -1084,9 +1084,9 @@ export default function SpendingForecastView() {
               </div>
             </div>
             
-            <div style={{
+            <div className="analysis-kpi" style={{
               padding: isMobile ? '16px' : '20px',
-              background: visibleEndingBalance >= 0 
+              background: visibleEndingBalance >= 0
                 ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
                 : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
               borderRadius: '12px',
@@ -1121,9 +1121,9 @@ export default function SpendingForecastView() {
               </div>
             </div>
             
-            <div style={{
+            <div className="analysis-kpi" style={{
               padding: isMobile ? '16px' : '20px',
-              background: forecast.lowestBalance >= 0 
+              background: forecast.lowestBalance >= 0
                 ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
                 : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
               borderRadius: '12px',
@@ -1152,16 +1152,16 @@ export default function SpendingForecastView() {
               </div>
             </div>
             
-            <div style={{
+            <div className="analysis-kpi" style={{
               padding: isMobile ? '16px' : '20px',
               background: '#f9fafb',
               borderRadius: '12px',
               border: '1px solid #e5e7eb',
             }}>
-              <div style={{ 
-                fontSize: isMobile ? '12px' : '13px', 
-                color: '#6b7280', 
-                marginBottom: '5px' 
+              <div style={{
+                fontSize: isMobile ? '12px' : '13px',
+                color: '#6b7280',
+                marginBottom: '5px'
               }}>
                 Net Change
               </div>
@@ -1182,9 +1182,9 @@ export default function SpendingForecastView() {
               </div>
             </div>
             
-            <div style={{
+            <div className="analysis-kpi recurring-bycat" style={{
               padding: isMobile ? '16px' : '20px',
-              background: safeAmountToRemove > 0 
+              background: safeAmountToRemove > 0
                 ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
                 : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
               borderRadius: '12px',

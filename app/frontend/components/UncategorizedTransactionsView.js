@@ -385,12 +385,12 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
   }
 
   return (
-    <div style={{ padding: '20px 0', width: 'calc(100% + 40px)', margin: '0 -20px', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+    <div className="txn-view-root" style={{ padding: '20px 0', width: 'calc(100% + 40px)', margin: '0 -20px', boxSizing: 'border-box' }}>
+      <div className="txn-view-header">
         <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>
           Uncategorized Transactions
         </h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="txn-view-actions">
           <button
             onClick={handleApplyRules}
             disabled={applyingRules || loading}
@@ -434,6 +434,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
         marginBottom: '16px',
         fontSize: '13px',
         color: '#6b7280',
+        flexWrap: 'wrap',
       }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
           <input
@@ -680,25 +681,9 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
               </p>
             </div>
           ) : (
-            <div style={{
-            background: 'white',
-            borderRadius: '8px',
-            border: '1px solid #e5e7eb',
-            overflow: 'hidden',
-          }}>
+            <div className="txn-table">
             {/* Table header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '40px 1.5fr 0.8fr 0.8fr 1.3fr auto',
-              gap: '8px',
-              padding: '12px 10px',
-              background: '#f9fafb',
-              borderBottom: '1px solid #e5e7eb',
-              fontWeight: '600',
-              fontSize: '14px',
-              color: '#6b7280',
-              alignItems: 'center',
-            }}>
+            <div className="txn-table-header has-select">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <input
                   type="checkbox"
@@ -710,7 +695,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
               </div>
               <div>Merchant / Description</div>
               <div>Date</div>
-              <div style={{ textAlign: 'right' }}>Amount</div>
+              <div className="txn-cell-amount">Amount</div>
               <div>Category</div>
               <div style={{ textAlign: 'center' }}>Actions</div>
             </div>
@@ -721,21 +706,17 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
               return (
               <div
                 key={transaction.transaction_id}
+                className="txn-row has-select"
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '40px 1.5fr 0.8fr 0.8fr 1.3fr auto',
-                  gap: '8px',
-                  padding: '12px 10px',
                   borderBottom: index < filteredTransactions.length - 1 ? '1px solid #e5e7eb' : 'none',
                   background: isSelected
                     ? (index % 2 === 0 ? '#eff6ff' : '#e8f0fe')
                     : '#fef2f2',
                   borderLeft: isSelected ? '3px solid #667eea' : '3px solid transparent',
                   transition: 'background 0.15s, border-left 0.15s',
-                  alignItems: 'center',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="txn-cell-select" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <input
                     type="checkbox"
                     checked={isSelected}
@@ -743,7 +724,7 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
                     style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#667eea' }}
                   />
                 </div>
-                <div>
+                <div className="txn-cell-name">
                   <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {transaction.userCategory && (
                       <span style={{
@@ -774,10 +755,10 @@ export default function UncategorizedTransactionsView({ refreshTrigger, onBulkDi
                     {transaction.userCategory || 'Uncategorized'}
                   </div>
                 </div>
-                <div style={{ fontSize: '14px', color: '#6b7280' }}>
+                <div className="txn-cell-date" style={{ fontSize: '14px', color: '#6b7280' }}>
                   {formatDate(transaction.date)}
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: '500', textAlign: 'right' }}>
+                <div className="txn-cell-amount" style={{ fontSize: '14px', fontWeight: '500' }}>
                   {formatCurrency(Math.abs(transaction.amount))}
                 </div>
                 <div className="transaction-actions-mobile-grid">

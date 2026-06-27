@@ -742,13 +742,13 @@ export default function RecurringPaymentsView() {
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div className="analysis-root" style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div className="txn-view-header">
         <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>
           Recurring Payments & Bills
         </h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="txn-view-actions">
           <button
             onClick={() => setShowAddForm(true)}
             style={{
@@ -799,13 +799,13 @@ export default function RecurringPaymentsView() {
 
       {/* Summary Cards */}
       {summary && (
-        <div style={{
+        <div className="analysis-kpis" style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
           gap: '15px',
           marginBottom: '30px',
         }}>
-          <div style={{
+          <div className="analysis-kpi" style={{
             padding: '20px',
             background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
             borderRadius: '12px',
@@ -820,7 +820,7 @@ export default function RecurringPaymentsView() {
             </div>
           </div>
           
-          <div style={{
+          <div className="analysis-kpi" style={{
             padding: '20px',
             background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
             borderRadius: '12px',
@@ -836,7 +836,7 @@ export default function RecurringPaymentsView() {
           </div>
           
           {/* Total Expenses with Estimates Card */}
-          <div style={{
+          <div className="analysis-kpi" style={{
             padding: '20px',
             background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
             borderRadius: '12px',
@@ -857,9 +857,9 @@ export default function RecurringPaymentsView() {
             </div>
           </div>
           
-          <div style={{
+          <div className="analysis-kpi" style={{
             padding: '20px',
-            background: netMonthlyWithEstimates >= 0 
+            background: netMonthlyWithEstimates >= 0
               ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
               : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
             borderRadius: '12px',
@@ -874,7 +874,7 @@ export default function RecurringPaymentsView() {
             </div>
           </div>
 
-          <div style={{
+          <div className="recurring-bycat" style={{
             padding: '20px',
             background: '#f9fafb',
             borderRadius: '12px',
@@ -892,7 +892,7 @@ export default function RecurringPaymentsView() {
       )}
 
       {/* Tabs */}
-      <div style={{
+      <div className="recurring-subtabs" style={{
         display: 'flex',
         gap: '5px',
         marginBottom: '20px',
@@ -1877,17 +1877,7 @@ export default function RecurringPaymentsView() {
               border: '1px solid #e5e7eb',
               overflow: 'hidden',
             }}>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
-                gap: '15px',
-                padding: '12px 15px',
-                background: '#f9fafb',
-                borderBottom: '1px solid #e5e7eb',
-                fontWeight: '600',
-                fontSize: '13px',
-                color: '#6b7280',
-              }}>
+              <div className="recurring-table-header">
                 <div>Name</div>
                 <div>Category</div>
                 <div>Amount</div>
@@ -1898,17 +1888,13 @@ export default function RecurringPaymentsView() {
               {filteredPayments.map((payment, idx) => (
                 <div
                   key={payment.id}
+                  className="recurring-row"
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
-                    gap: '15px',
-                    padding: '12px 15px',
                     borderBottom: idx < filteredPayments.length - 1 ? '1px solid #f3f4f6' : 'none',
-                    alignItems: 'center',
                   }}
                 >
-                  <div style={{ fontWeight: '500' }}>{payment.name}</div>
-                  <div>
+                  <div className="recurring-cell-name" style={{ fontWeight: '500' }}>{payment.name}</div>
+                  <div className="recurring-cell-category">
                     <span style={{
                       padding: '3px 8px',
                       background: getCategoryColor(payment.category) + '20',
@@ -1920,10 +1906,10 @@ export default function RecurringPaymentsView() {
                       {payment.category}
                     </span>
                   </div>
-                  <div style={{ fontWeight: '600' }}>{formatCurrency(payment.amount)}</div>
-                  <div style={{ color: '#6b7280', fontSize: '13px' }}>{getFrequencyLabel(payment.frequency)}</div>
-                  <div style={{ fontSize: '13px' }}>{formatDate(payment.nextPaymentDate)}</div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div className="recurring-cell-amount" style={{ fontWeight: '600' }}>{formatCurrency(payment.amount)}</div>
+                  <div className="recurring-cell-frequency" style={{ color: '#6b7280', fontSize: '13px' }}>{getFrequencyLabel(payment.frequency)}</div>
+                  <div className="recurring-cell-date" style={{ fontSize: '13px' }}>{formatDate(payment.nextPaymentDate)}</div>
+                  <div className="recurring-cell-actions" style={{ display: 'flex', gap: '8px' }}>
                     <button
                       onClick={() => handleEdit(payment)}
                       style={{

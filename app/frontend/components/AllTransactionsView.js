@@ -232,8 +232,8 @@ export default function AllTransactionsView({ onBulkDialogOpen, onRulesApplied, 
   }
 
   return (
-    <div style={{ padding: '20px 0', width: 'calc(100% + 40px)', margin: '0 -20px', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+    <div className="txn-view-root" style={{ padding: '20px 0', width: 'calc(100% + 40px)', margin: '0 -20px', boxSizing: 'border-box' }}>
+      <div className="txn-view-header">
         <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>
           All Transactions
           {transactions.length > 0 && (
@@ -242,7 +242,7 @@ export default function AllTransactionsView({ onBulkDialogOpen, onRulesApplied, 
             </span>
           )}
         </h2>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div className="txn-view-actions">
           <label
             style={{
               padding: '10px 20px',
@@ -385,47 +385,26 @@ export default function AllTransactionsView({ onBulkDialogOpen, onRulesApplied, 
           </p>
         </div>
       ) : (
-        <div style={{
-          background: 'white',
-          borderRadius: '8px',
-          border: '1px solid #e5e7eb',
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1.5fr 0.8fr 0.8fr 1.3fr auto',
-            gap: '8px',
-            padding: '12px 10px',
-            background: '#f9fafb',
-            borderBottom: '1px solid #e5e7eb',
-            fontWeight: '600',
-            fontSize: '14px',
-            color: '#6b7280',
-            position: 'sticky',
-            top: 0,
-            zIndex: 10,
-          }}>
+        <div className="txn-table">
+          <div className="txn-table-header">
             <div>Merchant / Description</div>
             <div>Date</div>
-            <div style={{ textAlign: 'right' }}>Amount</div>
+            <div className="txn-cell-amount">Amount</div>
             <div>Category</div>
             <div style={{ textAlign: 'center' }}>Actions</div>
           </div>
-          <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+          <div className="txn-rows-scroll">
             {filteredAndSortedTransactions.map((transaction, index) => (
               <div
                 key={transaction.transaction_id}
+                className="txn-row"
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1.5fr 0.8fr 0.8fr 1.3fr auto',
-                  gap: '8px',
-                  padding: '12px 10px',
                   borderBottom: index < filteredAndSortedTransactions.length - 1 ? '1px solid #e5e7eb' : 'none',
                   background: !transaction.userCategory ? '#fef2f2' : index % 2 === 0 ? 'white' : '#f9fafb',
-                  borderLeft: !transaction.userCategory ? '3px solid #ef4444' : 'none',
+                  borderLeft: !transaction.userCategory ? '3px solid #ef4444' : '3px solid transparent',
                 }}
               >
-                <div>
+                <div className="txn-cell-name">
                   <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {transaction.userCategory && (
                       <span style={{ 
@@ -444,10 +423,10 @@ export default function AllTransactionsView({ onBulkDialogOpen, onRulesApplied, 
                     {transaction.userCategory || 'Uncategorized'}
                   </div>
                 </div>
-                <div style={{ fontSize: '14px', color: '#6b7280' }}>
+                <div className="txn-cell-date" style={{ fontSize: '14px', color: '#6b7280' }}>
                   {formatDate(transaction.date)}
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: '500', textAlign: 'right' }}>
+                <div className="txn-cell-amount" style={{ fontSize: '14px', fontWeight: '500' }}>
                   {formatCurrency(Math.abs(transaction.amount))}
                 </div>
                 <div className="transaction-actions-mobile-grid">

@@ -9,6 +9,13 @@ export const metadata = {
   description: 'Connect your bank account to view balances and transactions ✨',
 };
 
+// Mobile foundation: ensure phones render at device width (not zoomed-out desktop)
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
