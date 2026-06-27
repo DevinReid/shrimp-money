@@ -1,0 +1,54 @@
+{
+  "name": "plaid-connect-frontend",
+  "version": "1.0.0",
+  "description": "Plaid Connect Frontend",
+  "private": true,
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.3.1",
+    "fs-extra": "^11.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "next": "^16.0.3",
+    "pg": "^8.16.3",
+    "plaid": "^21.0.0",
+    "prisma": "^6.19.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-plaid-link": "^4.1.1",
+    "speakeasy": "^2.0.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  },
+  "scripts": {
+    "dev": "next dev -p 4000 --webpack",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "next lint",
+    "audit": "npm audit",
+    "audit:fix": "npm audit fix",
+    "audit:critical": "npm audit --audit-level=critical",
+    "audit:high": "npm audit --audit-level=high",
+    "outdated": "npm outdated",
+    "check-eol": "node ../../scripts/check-eol.js"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

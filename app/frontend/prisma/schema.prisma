@@ -1,0 +1,230 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Plaid Connect Authentication Models
+// Using prefixed table names to avoid conflicts with other projects in the same database
+
+model PlaidUser {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String   // bcrypt hash
+  mfaSecret String?  // encrypted secret (nullable until MFA is set up)
+  mfaEnabled Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("plaid_users")
+}
+
+model PlaidAdminMFA {
+  id         String   @id @default("admin") // Single record for admin user
+  mfaSecret  String?  // encrypted secret (nullable until MFA is set up)
+  mfaEnabled Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  @@map("plaid_admin_mfa")
+}
+
+// Transaction categorization
+model PlaidTransactionCategory {
+  id            String   @id @default(cuid())
+  transactionId String   @unique // Plaid transaction_id
+  category      String   // User-assigned category name
+  isCustom      Boolean  @default(false) // Whether it's a custom category
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("plaid_transaction_categories")
+}
+
+// Transaction notes
+model PlaidTransactionNote {
+  id            String   @id @default(cuid())
+  transactionId String   @unique // Plaid transaction_id
+  note          String   // User note/comment
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("plaid_transaction_notes")
+}
+
+// Custom categories created by user
+model PlaidCustomCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique // Custom category name
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("plaid_custom_categories")
+}
+
+// Category color preferences
+model PlaidCategoryColor {
+  id        String   @id @default(cuid())
+  category  String   @unique // Category name
+  color     String   // Hex color code (e.g., "#10b981")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("plaid_category_colors")
+}
+
+// Plaid items (access tokens) - shared across all users
+model PlaidItem {
+  id          String   @id @default(cuid())
+  itemId      String   @unique // Plaid item_id
+  accessToken String   // Encrypted access token
+  environment String   @default("sandbox") // sandbox, development, or production
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("plaid_items")
+}
+
+// Plaid account data storage
+model PlaidAccountData {
+  id          String   @id @default(cuid())
+  itemId      String   @unique // Plaid item_id
+  accounts    Json     // Full accounts data from Plaid
+  lastFetched DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("plaid_account_data")
+}
+
+// Plaid transaction data storage
+model PlaidTransactionData {
+  id            String   @id @default(cuid())
+  itemId        String   @unique // Plaid item_id
+  transactions  Json     // Array of transactions from Plaid
+  totalTransactions Int   @default(0)
+  startDate     DateTime // Date range start
+  endDate       DateTime // Date range end
+  lastFetched   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("plaid_transaction_data")
+}
+
+// Normalized transaction table (extracted from JSON blob)
+model PlaidTransaction {
+  id            String   @id @default(cuid())
+  transactionId String   @unique // Plaid transaction_id (unique identifier)
+  itemId        String   // Plaid item_id (which account)
+  accountId     String   // Plaid account_id
+  name          String   // Transaction name/description
+  merchantName  String?  // Merchant name if available
+  amount        Float    // Transaction amount (positive = expense, negative = income)
+  date          DateTime // Transaction date
+  userCategory  String?  // User-assigned category (from PlaidTransactionCategory)
+  isoCurrencyCode String? // Currency code (e.g., "USD")
+  pending       Boolean  @default(false) // Whether transaction is pending
+  transactionCode String? // Transaction code
+  rawData       Json?    // Full original transaction data for reference
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([itemId])
+  @@index([accountId])
+  @@index([date])
+  @@index([transactionId])
+  @@index([userCategory])
+  @@map("plaid_transactions")
+}
+
+// Recurring payments configuration
+model PlaidRecurringPayment {
+  id              String   @id @default(cuid())
+  name            String   // User-friendly name (e.g., "Netflix", "Electric Bill")
+  merchantName    String?  // Original merchant name from transactions
+  merchantAliases Json?    // Array of alternate merchant names (e.g., ["Illustrator 2025", "Adobe Illustrator"])
+  category        String   // Income, Subscription, Bill, Credit Card, etc.
+  amount          Float    // Expected payment amount (for forecasting, uses max if variable)
+  amountMin       Float?   // Lowest observed amount (for variable bills like electricity)
+  amountMax       Float?   // Highest observed amount (for variable bills)
+  isVariableAmount Boolean @default(false) // True if amount varies >5% (Bills vs Subscriptions)
+  frequency       String   // weekly, bi-weekly, monthly, quarterly, yearly, custom
+  frequencyDays   Int?     // For custom frequency: days between payments
+  dayOfMonth      Int?     // For monthly: which day of month (1-31)
+  dayOfWeek       Int?     // For weekly/bi-weekly: 0=Sunday through 6=Saturday
+  startDate       DateTime // When the recurring payment started/first payment
+  endDate         DateTime? // Optional end date for the recurring payment
+  lastPaymentDate DateTime? // Date of the most recent payment
+  nextPaymentDate DateTime? // Predicted next payment date
+  isActive        Boolean  @default(true) // Whether still active
+  isAutoDetected  Boolean  @default(false) // Whether detected automatically
+  notes           String?  // User notes
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("plaid_recurring_payments")
+}
+
+// Link between transactions and recurring payments
+model PlaidRecurringPaymentTransaction {
+  id                  String   @id @default(cuid())
+  recurringPaymentId  String   // References PlaidRecurringPayment
+  transactionId       String   // Plaid transaction_id
+  amount              Float    // Actual amount of this payment
+  date                DateTime // Date of this payment
+  createdAt           DateTime @default(now())
+
+  @@unique([recurringPaymentId, transactionId])
+  @@map("plaid_recurring_payment_transactions")
+}
+
+// Vendor categorization rules for auto-categorizing transactions
+model PlaidCategorizationRule {
+  id                 String   @id @default(cuid())
+  name               String   // User-friendly name (e.g., "Apple Card Payment", "Taco Bell")
+  patterns           Json     // Array of patterns to match (e.g., ["Apple Card", "APPLE CARD GSBANK"])
+  category           String   // Category to assign when matched
+  matchType          String   @default("contains") // "contains", "startsWith", "exact"
+  patternLogic       String   @default("OR") // "OR" = match any pattern, "AND" = match all patterns
+  matchAmount        Float?   // Optional: only match transactions with this exact amount (for subscriptions)
+  excludedTransactions Json?  // Array of transaction IDs to exclude from this rule
+  autoApply          Boolean  @default(true) // Auto-apply or just suggest
+  priority           Int      @default(0) // Higher priority rules checked first
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("plaid_categorization_rules")
+}
+
+// Suggested categories for transactions (pending approval)
+model PlaidCategorySuggestion {
+  id            String   @id @default(cuid())
+  transactionId String   @unique // Plaid transaction_id
+  ruleId        String?  // Which rule suggested this
+  category      String   // Suggested category
+  confidence    Float    @default(1.0) // How confident (for future ML)
+  status        String   @default("pending") // "pending", "approved", "rejected"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("plaid_category_suggestions")
+}
+
+// Dismissed recurring payment suggestions (user marked as invalid/not needed)
+model PlaidDismissedSuggestion {
+  id        String   @id @default(cuid())
+  merchant  String   // Merchant name (case-insensitive matching)
+  category  String   // Category (Income, Subscription, Bill, Credit Card)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([merchant, category])
+  @@map("plaid_dismissed_suggestions")
+}

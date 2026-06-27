@@ -1,0 +1,19 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  prevent-direct-push:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "🚨 DIRECT PUSH TO MAIN DETECTED! 🚨"
+          echo "❌ This push was blocked for safety"
+          echo "✅ Please use: staging → main PR instead"
+          exit 1
+

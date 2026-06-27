@@ -1,0 +1,2731 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from './auth/AuthContext';
+
+const RECURRING_CATEGORIES = ['Income', 'Subscription', 'Bill', 'Credit Card'];
+const FREQUENCIES = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'bi-weekly', label: 'Bi-weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'yearly', label: 'Yearly' },
+  { value: 'custom', label: 'Custom' },
+];
+
+export default function RecurringPaymentsView() {
+  const [recurringPayments, setRecurringPayments] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState([]);
+  const [upcomingPayments, setUpcomingPayments] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview'); // overview, calendar, manage, suggestions, subscriptions, bills, credit-cards
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingPayment, setEditingPayment] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [linkToExistingModal, setLinkToExistingModal] = useState(null); // Stores suggestion being linked
+  const [categoryTransactions, setCategoryTransactions] = useState({}); // Grouped transactions by category
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [expandedMerchant, setExpandedMerchant] = useState(null); // Which merchant's transactions are expanded
+  const [linkModalPosition, setLinkModalPosition] = useState({ x: 0, y: 0 }); // Position for link modal
+  const [calculatedModalPosition, setCalculatedModalPosition] = useState({ left: 0, top: 0 }); // Calculated position for modal
+  const [dailyWeekendEstimates, setDailyWeekendEstimates] = useState(null); // Daily and weekend estimates data
+  const [loadingEstimates, setLoadingEstimates] = useState(false);
+  const { token } = useAuth();
+
+  // Form state
+  const [formData, setFormData] = useState({
+    name: '',
+    merchantName: '',
+    category: 'Bill',
+    amount: '',
+    isVariableAmount: false,
+    amountMin: '',
+    amountMax: '',
+    frequency: 'monthly',
+    frequencyDays: '',
+    dayOfMonth: '',
+    dayOfWeek: '',
+    startDate: '',
+    endDate: '',
+    lastPaymentDate: '',
+    notes: '',
+  });
+
+  const fetchRecurringPayments = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch('/api/plaid/recurring-payments', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+
+      if (data.success) {
+        setRecurringPayments(data.recurringPayments || []);
+        setSuggestions(data.suggestions || []);
+        setDismissedSuggestions(data.dismissedSuggestions || []);
+        setUpcomingPayments(data.upcomingPayments || []);
+        setSummary(data.summary || null);
+        
+        // Refresh category transactions if we're on a category tab
+        if (activeTab === 'subscriptions' || activeTab === 'bills' || activeTab === 'credit-cards') {
+          // Will be triggered by useEffect
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching recurring payments:', err);
+      setError('Failed to fetch recurring payments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to check if a transaction matches a recurring payment
+  const transactionMatchesPayment = (transaction, payment) => {
+    if (payment.category !== transaction.userCategory) return false;
+    
+    const txMerchant = (transaction.merchant_name || transaction.name || '').toLowerCase();
+    const paymentName = (payment.name || '').toLowerCase();
+    const paymentMerchant = (payment.merchantName || '').toLowerCase();
+    
+    // Check name match
+    if (paymentName && (
+      txMerchant === paymentName ||
+      txMerchant.includes(paymentName) ||
+      paymentName.includes(txMerchant)
+    )) return true;
+    
+    // Check merchant name match
+    if (paymentMerchant && (
+      txMerchant === paymentMerchant ||
+      txMerchant.includes(paymentMerchant) ||
+      paymentMerchant.includes(txMerchant)
+    )) return true;
+    
+    // Check aliases
+    if (payment.merchantAliases && payment.merchantAliases.length > 0) {
+      return payment.merchantAliases.some(alias => {
+        const aliasLower = alias.toLowerCase();
+        return txMerchant === aliasLower ||
+               txMerchant.includes(aliasLower) ||
+               aliasLower.includes(txMerchant);
+      });
+    }
+    
+    return false;
+  };
+
+  // Fetch transactions grouped by category for Subscriptions, Bills, Credit Cards
+  const fetchCategoryTransactions = async () => {
+    try {
+      setLoadingTransactions(true);
+      const response = await fetch('/api/plaid/transactions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.transactions && Array.isArray(data.transactions)) {
+        // Group transactions by category (Subscription, Bill, Credit Card)
+        const grouped = {
+          Subscription: [],
+          Bill: [],
+          'Credit Card': [],
+        };
+
+        data.transactions.forEach(t => {
+          const category = t.userCategory;
+          if (!category) return;
+          
+          // Normalize category name for matching (case-insensitive)
+          const categoryLower = category.toLowerCase().trim();
+          
+          // Map variations to standard category names
+          let mappedCategory = null;
+          if (categoryLower === 'subscription' || categoryLower === 'subscriptions') {
+            mappedCategory = 'Subscription';
+          } else if (categoryLower === 'bill' || categoryLower === 'bills') {
+            mappedCategory = 'Bill';
+          } else if (categoryLower === 'credit card' || categoryLower === 'credit cards') {
+            mappedCategory = 'Credit Card';
+          }
+          
+          if (mappedCategory) {
+            grouped[mappedCategory].push(t);
+          }
+        });
+
+        // Group by merchant/name within each category
+        const groupedByMerchant = {};
+        // Also create a map of transactions for each configured payment
+        const paymentTransactions = {};
+        
+        ['Subscription', 'Bill', 'Credit Card'].forEach(cat => {
+          const merchantMap = {};
+          grouped[cat].forEach(t => {
+            const key = t.merchant_name || t.name || 'Unknown';
+            if (!merchantMap[key]) {
+              merchantMap[key] = {
+                merchant: key,
+                transactions: [],
+                totalAmount: 0,
+                count: 0,
+                lastDate: null,
+                firstDate: null,
+              };
+            }
+            merchantMap[key].transactions.push(t);
+            merchantMap[key].totalAmount += Math.abs(t.amount);
+            merchantMap[key].count += 1;
+            const txDate = new Date(t.date);
+            if (!merchantMap[key].lastDate || txDate > new Date(merchantMap[key].lastDate)) {
+              merchantMap[key].lastDate = t.date;
+            }
+            if (!merchantMap[key].firstDate || txDate < new Date(merchantMap[key].firstDate)) {
+              merchantMap[key].firstDate = t.date;
+            }
+          });
+          
+          // Check if each merchant is already configured
+          groupedByMerchant[cat] = Object.values(merchantMap)
+            .map(m => {
+              // Find which payment this merchant matches
+              const matchingPayment = recurringPayments.find(rp => {
+                if (rp.category !== cat) return false;
+                // Check if any transaction in this merchant group matches the payment
+                return m.transactions.some(t => transactionMatchesPayment(t, rp));
+              });
+              
+              return {
+                ...m,
+                avgAmount: m.totalAmount / m.count,
+                isConfigured: !!matchingPayment,
+                matchingPaymentId: matchingPayment?.id,
+              };
+            })
+            .filter(m => {
+              // Filter out dismissed suggestions (using state from component)
+              const dismissedSet = new Set();
+              dismissedSuggestions.forEach(d => {
+                dismissedSet.add(`${d.merchant.toLowerCase()}:${d.category}`);
+              });
+              const key = `${m.merchant.toLowerCase()}:${cat}`;
+              return !dismissedSet.has(key);
+            })
+            .sort((a, b) => {
+              // Sort: unconfigured first, then by total amount
+              if (a.isConfigured !== b.isConfigured) {
+                return a.isConfigured ? 1 : -1;
+              }
+              return b.totalAmount - a.totalAmount;
+            });
+          
+          // Also group transactions by configured payment
+          recurringPayments
+            .filter(rp => rp.category === cat)
+            .forEach(payment => {
+              // Find all transactions that match this payment
+              const matchingTransactions = grouped[cat].filter(t => 
+                transactionMatchesPayment(t, payment)
+              );
+              
+              if (matchingTransactions.length > 0) {
+                paymentTransactions[payment.id] = {
+                  payment,
+                  transactions: matchingTransactions.sort((a, b) => 
+                    new Date(b.date) - new Date(a.date)
+                  ),
+                  totalAmount: matchingTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0),
+                  count: matchingTransactions.length,
+                };
+              }
+            });
+        });
+
+        setCategoryTransactions({
+          ...groupedByMerchant,
+          _paymentTransactions: paymentTransactions, // Store separately
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching category transactions:', err);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  // Fetch daily/weekend estimates from forecast
+  const fetchDailyWeekendEstimates = async () => {
+    try {
+      setLoadingEstimates(true);
+      const response = await fetch('/api/plaid/spending-forecast?days=90', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        console.error('Error fetching estimates:', data.error);
+        return;
+      }
+
+      if (data.success && data.dailyProjections) {
+        // Calculate daily and weekend estimates
+        const dailyEstimates = {};
+        const weekendEstimates = {};
+        
+        // Process 30 days of data to calculate monthly averages
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const thirtyDaysLater = new Date(today);
+        thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+        
+        let totalDaily = 0;
+        let totalWeekend = 0;
+        let dailyDays = 0;
+        let weekendDays = 0;
+        
+        data.dailyProjections.forEach(day => {
+          const dayDate = new Date(day.date);
+          dayDate.setHours(0, 0, 0, 0);
+          
+          if (dayDate >= today && dayDate <= thirtyDaysLater) {
+            // Get expenses with source 'category-spending'
+            const categoryExpenses = day.expenses.filter(e => 
+              e.source === 'category-spending'
+            );
+            
+            const dayOfWeek = dayDate.getDay(); // 0 = Sunday, 6 = Saturday
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            
+            // Calculate daily expenses (frequency === 'daily')
+            const dailyAmount = categoryExpenses.reduce((sum, e) => {
+              if (e.frequency === 'daily') {
+                return sum + e.amount;
+              }
+              return sum;
+            }, 0);
+            
+            // Calculate weekend expenses (frequency === 'weekly' on weekends)
+            const weekendAmount = isWeekend ? categoryExpenses.reduce((sum, e) => {
+              if (e.frequency === 'weekly') {
+                return sum + e.amount;
+              }
+              return sum;
+            }, 0) : 0;
+            
+            // Group by category for daily estimates
+            categoryExpenses.forEach(e => {
+              if (e.frequency === 'daily') {
+                if (!dailyEstimates[e.category]) {
+                  dailyEstimates[e.category] = { amount: 0, count: 0 };
+                }
+                dailyEstimates[e.category].amount += e.amount;
+                dailyEstimates[e.category].count += 1;
+              }
+            });
+            
+            // Group by category for weekend estimates (only on weekends)
+            if (isWeekend) {
+              categoryExpenses.forEach(e => {
+                if (e.frequency === 'weekly') {
+                  if (!weekendEstimates[e.category]) {
+                    weekendEstimates[e.category] = { amount: 0, count: 0 };
+                  }
+                  weekendEstimates[e.category].amount += e.amount;
+                  weekendEstimates[e.category].count += 1;
+                }
+              });
+            }
+            
+            totalDaily += dailyAmount;
+            totalWeekend += weekendAmount;
+            if (dailyAmount > 0) dailyDays++;
+            if (weekendAmount > 0) weekendDays++;
+          }
+        });
+        
+        // Calculate monthly totals (multiply daily by 30, weekend by ~8-9 weekends per month)
+        const daysPerMonth = 30;
+        const weekendsPerMonth = 8.5; // Average weekends per month
+        
+        const monthlyDailyTotal = (totalDaily / Math.max(dailyDays, 1)) * daysPerMonth;
+        const monthlyWeekendTotal = (totalWeekend / Math.max(weekendDays, 1)) * weekendsPerMonth;
+        
+        // Calculate monthly totals per category
+        const monthlyDailyByCategory = {};
+        const monthlyWeekendByCategory = {};
+        
+        Object.entries(dailyEstimates).forEach(([category, data]) => {
+          const avgDaily = data.amount / Math.max(data.count, 1);
+          monthlyDailyByCategory[category] = avgDaily * daysPerMonth;
+        });
+        
+        Object.entries(weekendEstimates).forEach(([category, data]) => {
+          const avgWeekend = data.amount / Math.max(data.count, 1);
+          monthlyWeekendByCategory[category] = avgWeekend * weekendsPerMonth;
+        });
+        
+        setDailyWeekendEstimates({
+          daily: {
+            total: monthlyDailyTotal,
+            byCategory: monthlyDailyByCategory,
+            perDay: totalDaily / Math.max(dailyDays, 1),
+          },
+          weekend: {
+            total: monthlyWeekendTotal,
+            byCategory: monthlyWeekendByCategory,
+            perWeekend: totalWeekend / Math.max(weekendDays, 1),
+          },
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching daily/weekend estimates:', err);
+    } finally {
+      setLoadingEstimates(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchRecurringPayments();
+      fetchDailyWeekendEstimates();
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (token && (activeTab === 'subscriptions' || activeTab === 'bills' || activeTab === 'credit-cards')) {
+      fetchCategoryTransactions();
+    }
+  }, [token, activeTab, recurringPayments, dismissedSuggestions]);
+
+  // Calculate modal position when linkModalPosition changes (similar to CategoryColorPicker)
+  useEffect(() => {
+    if (!linkToExistingModal || typeof window === 'undefined') return;
+    
+    const modalWidth = 500;
+    const modalHeight = 400;
+    const padding = 20;
+    
+    // Position modal right at the button location, like a dropdown
+    let left, top;
+    
+    // Horizontal: position to the side of the button
+    // If button is on right side of screen, show modal to the left
+    // If button is on left side, show modal to the right
+    const isButtonOnRight = linkModalPosition.x > window.innerWidth / 2;
+    
+    if (isButtonOnRight) {
+      left = linkModalPosition.x - modalWidth - 10; // To the left of button
+    } else {
+      left = linkModalPosition.x + 10; // To the right of button
+    }
+    
+    // If it doesn't fit on preferred side, try the other side
+    if (left < padding) {
+      left = linkModalPosition.x + 10;
+    }
+    if (left + modalWidth > window.innerWidth - padding) {
+      left = linkModalPosition.x - modalWidth - 10;
+    }
+    
+    // Final bounds check
+    if (left < padding) {
+      left = padding;
+    }
+    if (left + modalWidth > window.innerWidth - padding) {
+      left = window.innerWidth - modalWidth - padding;
+    }
+    
+    // Vertical: center modal on the button's vertical position
+    top = linkModalPosition.y - modalHeight / 2;
+    
+    // Keep it on screen
+    if (top < padding) {
+      top = padding;
+    }
+    if (top + modalHeight > window.innerHeight - padding) {
+      top = window.innerHeight - modalHeight - padding;
+    }
+    
+    setCalculatedModalPosition({ left, top });
+  }, [linkModalPosition, linkToExistingModal]);
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(Math.abs(amount));
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    // Parse date string as local time to avoid timezone shift
+    // Handle both 'YYYY-MM-DD' and ISO date strings
+    let localDate;
+    if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      // Date-only string: parse as local time
+      const [year, month, day] = dateString.split('-').map(Number);
+      localDate = new Date(year, month - 1, day);
+    } else {
+      // ISO string with time: parse normally but extract date parts
+      const d = new Date(dateString);
+      localDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    return localDate.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const getCategoryColor = (category) => {
+    const colors = {
+      'Income': '#10b981',
+      'Subscription': '#667eea',
+      'Bill': '#f59e0b',
+      'Credit Card': '#ef4444',
+    };
+    return colors[category] || '#6b7280';
+  };
+
+  const getFrequencyLabel = (frequency) => {
+    const freq = FREQUENCIES.find(f => f.value === frequency);
+    return freq ? freq.label : frequency;
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      merchantName: '',
+      category: 'Bill',
+      amount: '',
+      isVariableAmount: false,
+      amountMin: '',
+      amountMax: '',
+      frequency: 'monthly',
+      frequencyDays: '',
+      dayOfMonth: '',
+      dayOfWeek: '',
+      startDate: '',
+      endDate: '',
+      lastPaymentDate: '',
+      notes: '',
+    });
+    setEditingPayment(null);
+    setShowAddForm(false);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    try {
+      const url = editingPayment 
+        ? `/api/plaid/recurring-payments/${editingPayment.id}`
+        : '/api/plaid/recurring-payments';
+      
+      const response = await fetch(url, {
+        method: editingPayment ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ...formData,
+          amount: parseFloat(formData.amount),
+          isVariableAmount: formData.isVariableAmount || false,
+          amountMin: formData.isVariableAmount && formData.amountMin ? parseFloat(formData.amountMin) : null,
+          amountMax: formData.isVariableAmount && formData.amountMax ? parseFloat(formData.amountMax) : null,
+          frequencyDays: formData.frequency === 'custom' ? parseInt(formData.frequencyDays) : null,
+          dayOfMonth: formData.dayOfMonth ? parseInt(formData.dayOfMonth) : null,
+          dayOfWeek: formData.dayOfWeek ? parseInt(formData.dayOfWeek) : null,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+
+      resetForm();
+      fetchRecurringPayments();
+    } catch (err) {
+      console.error('Error saving recurring payment:', err);
+      setError('Failed to save recurring payment');
+    }
+  };
+
+  const handleEdit = (payment) => {
+    setFormData({
+      name: payment.name || '',
+      merchantName: payment.merchantName || '',
+      category: payment.category || 'Bill',
+      amount: payment.amount?.toString() || '',
+      isVariableAmount: payment.isVariableAmount || false,
+      amountMin: payment.amountMin?.toString() || '',
+      amountMax: payment.amountMax?.toString() || '',
+      frequency: payment.frequency || 'monthly',
+      frequencyDays: payment.frequencyDays?.toString() || '',
+      dayOfMonth: payment.dayOfMonth?.toString() || '',
+      dayOfWeek: payment.dayOfWeek?.toString() || '',
+      startDate: payment.startDate ? payment.startDate.split('T')[0] : '',
+      endDate: payment.endDate ? payment.endDate.split('T')[0] : '',
+      lastPaymentDate: payment.lastPaymentDate ? payment.lastPaymentDate.split('T')[0] : '',
+      notes: payment.notes || '',
+    });
+    setEditingPayment(payment);
+    setShowAddForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Are you sure you want to remove this recurring payment?')) return;
+    
+    try {
+      const response = await fetch(`/api/plaid/recurring-payments/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+
+      fetchRecurringPayments();
+    } catch (err) {
+      console.error('Error deleting recurring payment:', err);
+      setError('Failed to delete recurring payment');
+    }
+  };
+
+  const handleAddFromSuggestion = (suggestion) => {
+    setFormData({
+      name: suggestion.merchant,
+      merchantName: suggestion.merchant,
+      category: suggestion.category,
+      amount: suggestion.suggestedAmount.toString(),
+      frequency: suggestion.suggestedFrequency,
+      frequencyDays: '',
+      dayOfMonth: '',
+      startDate: '',
+      lastPaymentDate: suggestion.lastDate ? suggestion.lastDate.split('T')[0] : '',
+      notes: `Auto-detected from ${suggestion.occurrences} transactions`,
+    });
+    setShowAddForm(true);
+  };
+
+  const handleLinkToExisting = async (payment, suggestion) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/plaid/recurring-payments/${payment.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          addAlias: suggestion.merchant,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+
+      setLinkToExistingModal(null);
+      fetchRecurringPayments(); // Refresh to remove from suggestions
+    } catch (err) {
+      console.error('Error linking suggestion:', err);
+      setError('Failed to link suggestion to existing payment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDismissSuggestion = async (suggestion) => {
+    if (!confirm(`Are you sure you want to dismiss "${suggestion.merchant}"? This will remove it from suggestions permanently.`)) return;
+    
+    try {
+      setLoading(true);
+      const response = await fetch('/api/plaid/recurring-payments/suggestions/dismiss', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          merchant: suggestion.merchant,
+          category: suggestion.category,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+
+      fetchRecurringPayments(); // Refresh to remove from suggestions
+    } catch (err) {
+      console.error('Error dismissing suggestion:', err);
+      setError('Failed to dismiss suggestion');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter payments based on search
+  const filteredPayments = recurringPayments.filter(p => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      p.name?.toLowerCase().includes(query) ||
+      p.merchantName?.toLowerCase().includes(query) ||
+      p.category?.toLowerCase().includes(query)
+    );
+  });
+
+  // Group upcoming payments by date for calendar view
+  const groupedUpcoming = upcomingPayments.reduce((acc, payment) => {
+    if (!acc[payment.date]) {
+      acc[payment.date] = [];
+    }
+    acc[payment.date].push(payment);
+    return acc;
+  }, {});
+
+  // Calculate total monthly expenses including daily/weekend estimates
+  const totalMonthlyExpensesWithEstimates = useMemo(() => {
+    if (!summary) return 0;
+    return summary.totalMonthlyExpenses + 
+      (dailyWeekendEstimates?.daily.total || 0) + 
+      (dailyWeekendEstimates?.weekend.total || 0);
+  }, [summary, dailyWeekendEstimates]);
+
+  // Calculate net monthly (income - total expenses including estimates)
+  const netMonthlyWithEstimates = useMemo(() => {
+    if (!summary) return 0;
+    return summary.totalMonthlyIncome - totalMonthlyExpensesWithEstimates;
+  }, [summary, totalMonthlyExpensesWithEstimates]);
+
+  if (loading && recurringPayments.length === 0) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <p>Loading recurring payments...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="analysis-root" style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+      {/* Header */}
+      <div className="txn-view-header">
+        <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>
+          Recurring Payments & Bills
+        </h2>
+        <div className="txn-view-actions">
+          <button
+            onClick={() => setShowAddForm(true)}
+            style={{
+              padding: '10px 20px',
+              background: '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}
+          >
+            + Add Payment
+          </button>
+          <button
+            onClick={fetchRecurringPayments}
+            disabled={loading}
+            style={{
+              padding: '10px 20px',
+              background: loading ? '#9ca3af' : '#667eea',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{
+          padding: '12px',
+          background: '#fee2e2',
+          border: '1px solid #fecaca',
+          borderRadius: '6px',
+          color: '#991b1b',
+          marginBottom: '20px',
+        }}>
+          <strong>Error:</strong> {error}
+          <button onClick={() => setError(null)} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      {summary && (
+        <div className="analysis-kpis" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '15px',
+          marginBottom: '30px',
+        }}>
+          <div className="analysis-kpi" style={{
+            padding: '20px',
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            borderRadius: '12px',
+            color: 'white',
+          }}>
+            <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '5px' }}>Monthly Income</div>
+            <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              {formatCurrency(summary.totalMonthlyIncome)}
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              {summary.byCategory?.Income || 0} recurring
+            </div>
+          </div>
+          
+          <div className="analysis-kpi" style={{
+            padding: '20px',
+            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+            borderRadius: '12px',
+            color: 'white',
+          }}>
+            <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '5px' }}>Monthly Expenses</div>
+            <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              {formatCurrency(summary.totalMonthlyExpenses)}
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              {(summary.byCategory?.Subscription || 0) + (summary.byCategory?.Bill || 0) + (summary.byCategory?.['Credit Card'] || 0)} recurring
+            </div>
+          </div>
+          
+          {/* Total Expenses with Estimates Card */}
+          <div className="analysis-kpi" style={{
+            padding: '20px',
+            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            borderRadius: '12px',
+            color: 'white',
+          }}>
+            <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '5px' }}>Total Monthly Expenses</div>
+            <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              {formatCurrency(totalMonthlyExpensesWithEstimates)}
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              {formatCurrency(summary.totalMonthlyExpenses)} recurring
+              {dailyWeekendEstimates && (
+                <>
+                  <br />
+                  + {formatCurrency((dailyWeekendEstimates.daily.total || 0) + (dailyWeekendEstimates.weekend.total || 0))} estimates
+                </>
+              )}
+            </div>
+          </div>
+          
+          <div className="analysis-kpi" style={{
+            padding: '20px',
+            background: netMonthlyWithEstimates >= 0
+              ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+              : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            borderRadius: '12px',
+            color: 'white',
+          }}>
+            <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '5px' }}>Net Monthly</div>
+            <div style={{ fontSize: '28px', fontWeight: '700' }}>
+              {netMonthlyWithEstimates >= 0 ? '+' : ''}{formatCurrency(netMonthlyWithEstimates)}
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
+              {formatCurrency(summary.totalMonthlyIncome)} in - {formatCurrency(totalMonthlyExpensesWithEstimates)} out
+            </div>
+          </div>
+
+          <div className="recurring-bycat" style={{
+            padding: '20px',
+            background: '#f9fafb',
+            borderRadius: '12px',
+            border: '1px solid #e5e7eb',
+          }}>
+            <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '10px' }}>By Category</div>
+            {RECURRING_CATEGORIES.map(cat => (
+              <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ fontSize: '13px', color: getCategoryColor(cat) }}>{cat}</span>
+                <span style={{ fontSize: '13px', fontWeight: '600' }}>{summary.byCategory?.[cat] || 0}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="recurring-subtabs" style={{
+        display: 'flex',
+        gap: '5px',
+        marginBottom: '20px',
+        borderBottom: '2px solid #e5e7eb',
+        paddingBottom: '0',
+      }}>
+        {[
+          { id: 'overview', label: 'Overview' },
+          { id: 'calendar', label: 'Upcoming Calendar' },
+          { id: 'manage', label: 'Manage Payments' },
+          { id: 'suggestions', label: `Suggestions (${suggestions.length})` },
+          { id: 'subscriptions', label: `📺 Subscriptions`, category: 'Subscription' },
+          { id: 'bills', label: `📄 Bills`, category: 'Bill' },
+          { id: 'credit-cards', label: `💳 Credit Cards`, category: 'Credit Card' },
+          { id: 'estimates', label: `📊 Daily/Weekend Estimates` },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              padding: '12px 20px',
+              background: activeTab === tab.id ? '#667eea' : 'transparent',
+              color: activeTab === tab.id ? 'white' : '#6b7280',
+              border: 'none',
+              borderRadius: '8px 8px 0 0',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              marginBottom: '-2px',
+              borderBottom: activeTab === tab.id ? '2px solid #667eea' : '2px solid transparent',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Link to Existing Payment Modal */}
+      {linkToExistingModal && (() => {
+        // Filter payments by category if we're linking from a category tab
+        const categoryToMatch = linkToExistingModal.category;
+        const paymentsToShow = categoryToMatch
+          ? recurringPayments.filter(p => p.category === categoryToMatch)
+          : recurringPayments;
+        
+        return (
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.5)',
+              zIndex: 1000,
+            }}
+            onClick={() => setLinkToExistingModal(null)}
+          >
+            <div 
+              style={{
+                position: 'absolute',
+                left: `${calculatedModalPosition.left}px`,
+                top: `${calculatedModalPosition.top}px`,
+                background: 'white',
+                borderRadius: '12px',
+                padding: '30px',
+                width: '500px',
+                maxWidth: '90vw',
+                maxHeight: '80vh',
+                overflowY: 'auto',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '20px' }}>
+              Link to Existing Payment
+            </h3>
+            <p style={{ margin: '0 0 20px 0', color: '#6b7280', fontSize: '14px' }}>
+              Add "<strong>{linkToExistingModal.merchant}</strong>" as an alias to an existing recurring payment.
+              Future transactions with this name will be associated with the selected payment.
+            </p>
+
+            {recurringPayments.length === 0 ? (
+              <div style={{
+                padding: '20px',
+                background: '#f9fafb',
+                borderRadius: '8px',
+                textAlign: 'center',
+                color: '#6b7280',
+              }}>
+                No existing recurring payments to link to. Create one first!
+              </div>
+            ) : paymentsToShow.length === 0 ? (
+              <div style={{
+                padding: '20px',
+                background: '#fef3c7',
+                borderRadius: '8px',
+                textAlign: 'center',
+                color: '#92400e',
+              }}>
+                No existing {categoryToMatch?.toLowerCase()} payments found. 
+                {categoryToMatch && (
+                  <span> You can still link to a payment from another category, or create a new one.</span>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '10px', marginBottom: '20px' }}>
+                {categoryToMatch && paymentsToShow.length < recurringPayments.length && (
+                  <div style={{
+                    padding: '10px',
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    color: '#1e40af',
+                    marginBottom: '10px',
+                  }}>
+                    Showing {categoryToMatch} payments only. 
+                    {recurringPayments.length - paymentsToShow.length > 0 && (
+                      <button
+                        onClick={() => {
+                          // Show all payments by removing category filter
+                          setLinkToExistingModal({ ...linkToExistingModal, category: null });
+                        }}
+                        style={{
+                          marginLeft: '8px',
+                          padding: '2px 8px',
+                          background: '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                        }}
+                      >
+                        Show All Categories
+                      </button>
+                    )}
+                  </div>
+                )}
+                {paymentsToShow.map(payment => (
+                  <div
+                    key={payment.id}
+                    onClick={() => handleLinkToExisting(payment, linkToExistingModal)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '15px',
+                      background: '#f9fafb',
+                      borderRadius: '8px',
+                      border: '2px solid #e5e7eb',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.borderColor = '#667eea';
+                      e.currentTarget.style.background = '#f0f4ff';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.borderColor = '#e5e7eb';
+                      e.currentTarget.style.background = '#f9fafb';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '8px',
+                        background: getCategoryColor(payment.category),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontSize: '16px',
+                        fontWeight: '600',
+                      }}>
+                        {payment.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '15px' }}>{payment.name}</div>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                          {payment.category} • {formatCurrency(payment.amount)} / {getFrequencyLabel(payment.frequency)}
+                        </div>
+                        {payment.merchantAliases && payment.merchantAliases.length > 0 && (
+                          <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
+                            Aliases: {payment.merchantAliases.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{
+                      padding: '6px 12px',
+                      background: '#667eea',
+                      color: 'white',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                    }}>
+                      Link Here
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setLinkToExistingModal(null)}
+                style={{
+                  padding: '10px 20px',
+                  background: '#f3f4f6',
+                  color: '#374151',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Add/Edit Form Modal */}
+      {showAddForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '30px',
+            width: '100%',
+            maxWidth: '500px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+          }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '20px' }}>
+              {editingPayment ? 'Edit Recurring Payment' : 'Add Recurring Payment'}
+            </h3>
+            
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                  placeholder="e.g., Netflix, Electric Bill"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  Category *
+                </label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                  }}
+                >
+                  {RECURRING_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  Amount *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  required
+                  placeholder="0.00"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.isVariableAmount}
+                    onChange={(e) => setFormData({ ...formData, isVariableAmount: e.target.checked })}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: '500', fontSize: '14px' }}>
+                    Variable Amount (e.g., electricity bills that change)
+                  </span>
+                </label>
+                <p style={{ margin: '5px 0 0 26px', fontSize: '12px', color: '#6b7280' }}>
+                  If checked, you can set a min and max range. The forecast will use the max amount for safety.
+                </p>
+              </div>
+
+              {formData.isVariableAmount && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                      Minimum Amount
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.amountMin}
+                      onChange={(e) => setFormData({ ...formData, amountMin: e.target.value })}
+                      placeholder="0.00"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                      Maximum Amount *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.amountMax}
+                      onChange={(e) => setFormData({ ...formData, amountMax: e.target.value })}
+                      required={formData.isVariableAmount}
+                      placeholder="0.00"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  Frequency *
+                </label>
+                <select
+                  value={formData.frequency}
+                  onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                  }}
+                >
+                  {FREQUENCIES.map(f => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {formData.frequency === 'custom' && (
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                    Days Between Payments
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.frequencyDays}
+                    onChange={(e) => setFormData({ ...formData, frequencyDays: e.target.value })}
+                    placeholder="e.g., 45"
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                    }}
+                  />
+                </div>
+              )}
+
+              {formData.frequency === 'monthly' && (
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                    Day of Month (optional)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={formData.dayOfMonth}
+                    onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
+                    placeholder="e.g., 15 (leave empty for last payment date + 1 month)"
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                    }}
+                  />
+                  <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    If set, payment will occur on this day each month. Otherwise, it's calculated from the last payment date.
+                  </p>
+                </div>
+              )}
+
+              {formData.frequency === 'weekly' && (
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                    Day of Week (optional)
+                  </label>
+                  <select
+                    value={formData.dayOfWeek}
+                    onChange={(e) => setFormData({ ...formData, dayOfWeek: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <option value="">Any day (based on last payment)</option>
+                    <option value="0">Sunday</option>
+                    <option value="1">Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3">Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                  </select>
+                  <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    If set, payment will occur on this day each week. Otherwise, it's calculated from the last payment date.
+                  </p>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                    }}
+                  />
+                  <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    When this payment first started
+                  </p>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                    Last Payment Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.lastPaymentDate}
+                    onChange={(e) => setFormData({ ...formData, lastPaymentDate: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                    }}
+                  />
+                  <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    Used to calculate next payment date
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  End Date (optional)
+                </label>
+                <input
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                  }}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                  If set, this payment will stop recurring after this date (e.g., for temporary subscriptions)
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '14px' }}>
+                  Notes
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="Optional notes..."
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    resize: 'vertical',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  style={{
+                    padding: '10px 20px',
+                    background: '#f3f4f6',
+                    color: '#374151',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: '10px 20px',
+                    background: '#667eea',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                  }}
+                >
+                  {editingPayment ? 'Save Changes' : 'Add Payment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <div>
+          {/* Next 7 Days Preview */}
+          <div style={{ marginBottom: '30px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '15px' }}>Next 7 Days</h3>
+            {upcomingPayments.filter(p => {
+              const paymentDate = new Date(p.date);
+              const today = new Date();
+              const weekFromNow = new Date(today);
+              weekFromNow.setDate(weekFromNow.getDate() + 7);
+              return paymentDate >= today && paymentDate <= weekFromNow;
+            }).length === 0 ? (
+              <div style={{
+                padding: '30px',
+                background: '#f0fdf4',
+                borderRadius: '8px',
+                border: '1px solid #bbf7d0',
+                textAlign: 'center',
+                color: '#166534',
+              }}>
+                No payments due in the next 7 days
+              </div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gap: '10px',
+              }}>
+                {upcomingPayments.filter(p => {
+                  const paymentDate = new Date(p.date);
+                  const today = new Date();
+                  const weekFromNow = new Date(today);
+                  weekFromNow.setDate(weekFromNow.getDate() + 7);
+                  return paymentDate >= today && paymentDate <= weekFromNow;
+                }).map((payment, idx) => (
+                  <div
+                    key={`${payment.recurringPaymentId}-${payment.date}-${idx}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '15px',
+                      background: payment.isIncome ? '#f0fdf4' : '#fef2f2',
+                      borderRadius: '8px',
+                      border: `1px solid ${payment.isIncome ? '#bbf7d0' : '#fecaca'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      <div style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '8px',
+                        background: getCategoryColor(payment.category),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontSize: '16px',
+                        fontWeight: '600',
+                      }}>
+                        {payment.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '15px' }}>{payment.name}</div>
+                        <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                          {formatDate(payment.date)} • {payment.category}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: '600',
+                      color: payment.isIncome ? '#10b981' : '#ef4444',
+                    }}>
+                      {payment.isIncome ? '+' : '-'}{formatCurrency(payment.amount)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* All Recurring Payments */}
+          <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '15px' }}>All Recurring Payments</h3>
+          {recurringPayments.length === 0 ? (
+            <div style={{
+              padding: '40px',
+              textAlign: 'center',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+            }}>
+              <p style={{ color: '#6b7280', marginBottom: '15px' }}>
+                No recurring payments configured yet.
+              </p>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>
+                Add your first payment or check the Suggestions tab for auto-detected patterns.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '15px' }}>
+              {recurringPayments.map(payment => (
+                <div
+                  key={payment.id}
+                  style={{
+                    padding: '20px',
+                    background: 'white',
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', gap: '15px' }}>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '10px',
+                        background: getCategoryColor(payment.category),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontSize: '20px',
+                        fontWeight: '600',
+                      }}>
+                        {payment.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '4px' }}>
+                          {payment.name}
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          <span style={{
+                            padding: '3px 8px',
+                            background: getCategoryColor(payment.category) + '20',
+                            color: getCategoryColor(payment.category),
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                          }}>
+                            {payment.category}
+                          </span>
+                          <span style={{
+                            padding: '3px 8px',
+                            background: '#f3f4f6',
+                            color: '#6b7280',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                          }}>
+                            {getFrequencyLabel(payment.frequency)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{
+                        fontSize: '22px',
+                        fontWeight: '700',
+                        color: payment.category === 'Income' ? '#10b981' : '#111827',
+                      }}>
+                        {payment.category === 'Income' ? '+' : ''}{formatCurrency(payment.amount)}
+                        {payment.isVariableAmount && payment.amountMax && (
+                          <span style={{ fontSize: '14px', color: '#6b7280', marginLeft: '8px' }}>
+                            (up to {formatCurrency(payment.amountMax)})
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
+                        Next: {formatDate(payment.nextPaymentDate)}
+                      </div>
+                      {payment.isVariableAmount && payment.amountMin && payment.amountMax && (
+                        <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>
+                          Range: {formatCurrency(payment.amountMin)} - {formatCurrency(payment.amountMax)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {payment.merchantAliases && payment.merchantAliases.length > 0 && (
+                    <div style={{
+                      marginTop: '12px',
+                      padding: '10px',
+                      background: '#f0f4ff',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      color: '#4b5563',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flexWrap: 'wrap',
+                    }}>
+                      <span style={{ fontWeight: '500', color: '#667eea' }}>🔗 Also matches:</span>
+                      {payment.merchantAliases.map((alias, i) => (
+                        <span key={i} style={{
+                          padding: '2px 8px',
+                          background: 'white',
+                          borderRadius: '4px',
+                          border: '1px solid #d1d5db',
+                        }}>
+                          {alias}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {payment.notes && (
+                    <div style={{
+                      marginTop: '12px',
+                      padding: '10px',
+                      background: '#f9fafb',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      color: '#6b7280',
+                    }}>
+                      {payment.notes}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Calendar Tab */}
+      {activeTab === 'calendar' && (
+        <div>
+          <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '15px' }}>
+            Upcoming Payments (Next 60 Days)
+          </h3>
+          
+          {Object.keys(groupedUpcoming).length === 0 ? (
+            <div style={{
+              padding: '40px',
+              textAlign: 'center',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+            }}>
+              <p style={{ color: '#6b7280' }}>
+                No upcoming payments scheduled. Add some recurring payments to see them here.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '20px' }}>
+              {Object.entries(groupedUpcoming).map(([date, payments]) => {
+                const totalExpenses = payments.filter(p => !p.isIncome).reduce((sum, p) => sum + p.amount, 0);
+                const totalIncome = payments.filter(p => p.isIncome).reduce((sum, p) => sum + p.amount, 0);
+                const dateObj = new Date(date);
+                const isToday = new Date().toDateString() === dateObj.toDateString();
+                
+                return (
+                  <div key={date} style={{
+                    border: isToday ? '2px solid #667eea' : '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    background: 'white',
+                  }}>
+                    <div style={{
+                      padding: '12px 15px',
+                      background: isToday ? '#667eea' : '#f9fafb',
+                      borderBottom: '1px solid #e5e7eb',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}>
+                      <div>
+                        <span style={{
+                          fontWeight: '600',
+                          fontSize: '15px',
+                          color: isToday ? 'white' : '#111827',
+                        }}>
+                          {dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                        </span>
+                        {isToday && (
+                          <span style={{
+                            marginLeft: '10px',
+                            padding: '2px 8px',
+                            background: 'rgba(255,255,255,0.2)',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            color: 'white',
+                          }}>
+                            Today
+                          </span>
+                        )}
+                      </div>
+                      <div style={{
+                        fontSize: '14px',
+                        color: isToday ? 'white' : '#6b7280',
+                      }}>
+                        {totalIncome > 0 && <span style={{ color: isToday ? '#bbf7d0' : '#10b981', marginRight: '10px' }}>+{formatCurrency(totalIncome)}</span>}
+                        {totalExpenses > 0 && <span style={{ color: isToday ? '#fecaca' : '#ef4444' }}>-{formatCurrency(totalExpenses)}</span>}
+                      </div>
+                    </div>
+                    <div>
+                      {payments.map((payment, idx) => (
+                        <div
+                          key={`${payment.recurringPaymentId}-${idx}`}
+                          style={{
+                            padding: '12px 15px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            borderBottom: idx < payments.length - 1 ? '1px solid #f3f4f6' : 'none',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              background: getCategoryColor(payment.category),
+                            }} />
+                            <span style={{ fontSize: '14px' }}>{payment.name}</span>
+                            <span style={{
+                              fontSize: '11px',
+                              color: '#6b7280',
+                              background: '#f3f4f6',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                            }}>
+                              {payment.category}
+                            </span>
+                          </div>
+                          <span style={{
+                            fontWeight: '600',
+                            color: payment.isIncome ? '#10b981' : '#111827',
+                          }}>
+                            {payment.isIncome ? '+' : ''}{formatCurrency(payment.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Manage Tab */}
+      {activeTab === 'manage' && (
+        <div>
+          <div style={{ marginBottom: '20px' }}>
+            <input
+              type="text"
+              placeholder="Search payments..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                maxWidth: '400px',
+                padding: '10px 15px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px',
+              }}
+            />
+          </div>
+
+          {filteredPayments.length === 0 ? (
+            <div style={{
+              padding: '40px',
+              textAlign: 'center',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+            }}>
+              <p style={{ color: '#6b7280' }}>
+                {searchQuery ? 'No payments match your search.' : 'No recurring payments configured yet.'}
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'white',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+              overflow: 'hidden',
+            }}>
+              <div className="recurring-table-header">
+                <div>Name</div>
+                <div>Category</div>
+                <div>Amount</div>
+                <div>Frequency</div>
+                <div>Next Payment</div>
+                <div>Actions</div>
+              </div>
+              {filteredPayments.map((payment, idx) => (
+                <div
+                  key={payment.id}
+                  className="recurring-row"
+                  style={{
+                    borderBottom: idx < filteredPayments.length - 1 ? '1px solid #f3f4f6' : 'none',
+                  }}
+                >
+                  <div className="recurring-cell-name" style={{ fontWeight: '500' }}>{payment.name}</div>
+                  <div className="recurring-cell-category">
+                    <span style={{
+                      padding: '3px 8px',
+                      background: getCategoryColor(payment.category) + '20',
+                      color: getCategoryColor(payment.category),
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                    }}>
+                      {payment.category}
+                    </span>
+                  </div>
+                  <div className="recurring-cell-amount" style={{ fontWeight: '600' }}>{formatCurrency(payment.amount)}</div>
+                  <div className="recurring-cell-frequency" style={{ color: '#6b7280', fontSize: '13px' }}>{getFrequencyLabel(payment.frequency)}</div>
+                  <div className="recurring-cell-date" style={{ fontSize: '13px' }}>{formatDate(payment.nextPaymentDate)}</div>
+                  <div className="recurring-cell-actions" style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => handleEdit(payment)}
+                      style={{
+                        padding: '5px 10px',
+                        background: '#f3f4f6',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(payment.id)}
+                      style={{
+                        padding: '5px 10px',
+                        background: '#fee2e2',
+                        border: '1px solid #fecaca',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        color: '#991b1b',
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Suggestions Tab */}
+      {activeTab === 'suggestions' && (
+        <div>
+          <div style={{
+            padding: '15px',
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            fontSize: '14px',
+            color: '#1e40af',
+          }}>
+            <strong>💡 Auto-Detection:</strong> These are recurring payments detected from your categorized transactions 
+            (Income, Subscription, Bill, Credit Card).
+            <br /><br />
+            <strong>🦐 Tip:</strong> If you see the same payment with different names (like "Adobe Illustrator" and "Illustrator 2025"), 
+            use <strong>"Link to Existing"</strong> to add it as an alias instead of creating a duplicate!
+          </div>
+
+          {suggestions.length === 0 ? (
+            <div style={{
+              padding: '40px',
+              textAlign: 'center',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+            }}>
+              <p style={{ color: '#6b7280', marginBottom: '10px' }}>
+                No suggestions available.
+              </p>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>
+                Categorize more transactions as Income, Subscription, Bill, or Credit Card to see suggestions here.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '15px' }}>
+              {suggestions.map((suggestion, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '20px',
+                    background: 'white',
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '8px' }}>
+                        {suggestion.merchant}
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+                        <span style={{
+                          padding: '3px 8px',
+                          background: getCategoryColor(suggestion.category) + '20',
+                          color: getCategoryColor(suggestion.category),
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                        }}>
+                          {suggestion.category}
+                        </span>
+                        <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                          {suggestion.occurrences} transactions detected
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#6b7280' }}>
+                        Suggested: <strong>{formatCurrency(suggestion.suggestedAmount)}</strong> / {suggestion.suggestedFrequency}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#9ca3af', marginTop: '5px' }}>
+                        Last seen: {formatDate(suggestion.lastDate)}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button
+                        onClick={() => handleAddFromSuggestion(suggestion)}
+                        style={{
+                          padding: '8px 16px',
+                          background: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        + Add New
+                      </button>
+                      {recurringPayments.length > 0 && (
+                        <button
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setLinkModalPosition({
+                              x: rect.left + rect.width / 2,
+                              y: rect.top + rect.height / 2, // Center of the button
+                            });
+                            setLinkToExistingModal(suggestion);
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            background: '#667eea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          🔗 Link to Existing
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDismissSuggestion(suggestion)}
+                        style={{
+                          padding: '8px 16px',
+                          background: '#f3f4f6',
+                          color: '#6b7280',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        ✕ Dismiss
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Category Tabs: Subscriptions, Bills, Credit Cards */}
+      {(activeTab === 'subscriptions' || activeTab === 'bills' || activeTab === 'credit-cards') && (() => {
+        const categoryMap = {
+          'subscriptions': 'Subscription',
+          'bills': 'Bill',
+          'credit-cards': 'Credit Card',
+        };
+        const currentCategory = categoryMap[activeTab];
+        const configuredPayments = recurringPayments.filter(rp => rp.category === currentCategory);
+        const transactions = categoryTransactions[currentCategory] || [];
+        const unconfiguredTransactions = transactions.filter(t => !t.isConfigured);
+        const paymentTransactions = categoryTransactions._paymentTransactions || {};
+
+        return (
+          <div>
+            <div style={{
+              padding: '15px',
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              fontSize: '14px',
+              color: '#1e40af',
+            }}>
+              <strong>💡 {currentCategory} Management:</strong> Configure recurring payments for {currentCategory.toLowerCase()}. 
+              See what's already configured and what needs to be added from your transaction history.
+            </div>
+
+            {/* Configured Payments */}
+            <div style={{ marginBottom: '30px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span>✅</span> Configured {currentCategory}s ({configuredPayments.length})
+              </h3>
+              {configuredPayments.length === 0 ? (
+                <div style={{
+                  padding: '30px',
+                  background: '#f9fafb',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb',
+                  textAlign: 'center',
+                  color: '#6b7280',
+                }}>
+                  No {currentCategory.toLowerCase()} payments configured yet.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: '15px' }}>
+                  {configuredPayments.map(payment => {
+                    const paymentTxns = paymentTransactions[payment.id];
+                    const isExpanded = expandedMerchant === `payment-${payment.id}`;
+                    
+                    return (
+                      <div
+                        key={payment.id}
+                        style={{
+                          padding: '20px',
+                          background: 'white',
+                          borderRadius: '8px',
+                          border: '2px solid #10b981',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '8px' }}>
+                              {payment.name}
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
+                              <span style={{
+                                padding: '3px 8px',
+                                background: getCategoryColor(payment.category) + '20',
+                                color: getCategoryColor(payment.category),
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: '500',
+                              }}>
+                                {payment.category}
+                              </span>
+                              <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                                {formatCurrency(payment.amount)} / {getFrequencyLabel(payment.frequency)}
+                              </span>
+                              {payment.isVariableAmount && payment.amountMax && (
+                                <span style={{ fontSize: '12px', color: '#9ca3af' }}>
+                                  (up to {formatCurrency(payment.amountMax)})
+                                </span>
+                              )}
+                              {paymentTxns && (
+                                <span style={{ fontSize: '12px', color: '#667eea', fontWeight: '500' }}>
+                                  {paymentTxns.count} transaction{paymentTxns.count !== 1 ? 's' : ''} linked
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                              Next: {formatDate(payment.nextPaymentDate)}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+                            {paymentTxns && paymentTxns.transactions.length > 0 && (
+                              <button
+                                onClick={() => setExpandedMerchant(isExpanded ? null : `payment-${payment.id}`)}
+                                style={{
+                                  padding: '6px 12px',
+                                  background: '#f3f4f6',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                  color: '#374151',
+                                }}
+                              >
+                                {isExpanded ? 'Hide' : 'Show'} Transactions ({paymentTxns.count})
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleEdit(payment)}
+                              style={{
+                                padding: '6px 12px',
+                                background: '#f3f4f6',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                              }}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Show linked transactions */}
+                        {isExpanded && paymentTxns && paymentTxns.transactions.length > 0 && (
+                          <div style={{
+                            marginTop: '15px',
+                            padding: '15px',
+                            background: '#f9fafb',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                          }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '10px', color: '#6b7280' }}>
+                              Linked Transactions ({paymentTxns.count})
+                            </div>
+                            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                              {paymentTxns.transactions.map((tx, txIdx) => (
+                                <div
+                                  key={tx.transaction_id || txIdx}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '10px',
+                                    borderBottom: txIdx < paymentTxns.transactions.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontSize: '14px', fontWeight: '500' }}>
+                                      {tx.name}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                      {formatDate(tx.date)}
+                                      {tx.merchant_name && tx.merchant_name !== tx.name && (
+                                        <span> • {tx.merchant_name}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                                    {formatCurrency(Math.abs(tx.amount))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Unconfigured Transactions */}
+            <div>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span>📋</span> Transactions to Configure ({unconfiguredTransactions.length})
+              </h3>
+              {loadingTransactions ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                  Loading transactions...
+                </div>
+              ) : unconfiguredTransactions.length === 0 ? (
+                <div style={{
+                  padding: '30px',
+                  background: '#f0fdf4',
+                  borderRadius: '8px',
+                  border: '1px solid #bbf7d0',
+                  textAlign: 'center',
+                  color: '#166534',
+                }}>
+                  🎉 All {currentCategory.toLowerCase()} transactions are configured!
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: '15px' }}>
+                  {unconfiguredTransactions.map((merchantGroup, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '20px',
+                        background: 'white',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '8px' }}>
+                            {merchantGroup.merchant}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
+                            <span style={{
+                              padding: '3px 8px',
+                              background: getCategoryColor(currentCategory) + '20',
+                              color: getCategoryColor(currentCategory),
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                            }}>
+                              {currentCategory}
+                            </span>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                              {merchantGroup.count} transactions
+                            </span>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                              Total: {formatCurrency(merchantGroup.totalAmount)}
+                            </span>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                              Avg: {formatCurrency(merchantGroup.avgAmount)}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                            {formatDate(merchantGroup.firstDate)} - {formatDate(merchantGroup.lastDate)}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
+                          <button
+                            onClick={() => {
+                              // Calculate suggested frequency
+                              const daysBetween = (new Date(merchantGroup.lastDate) - new Date(merchantGroup.firstDate)) / (1000 * 60 * 60 * 24);
+                              const avgDays = daysBetween / (merchantGroup.count - 1);
+                              let suggestedFreq = 'monthly';
+                              if (avgDays <= 10) suggestedFreq = 'weekly';
+                              else if (avgDays <= 20) suggestedFreq = 'bi-weekly';
+                              else if (avgDays <= 45) suggestedFreq = 'monthly';
+                              else if (avgDays <= 100) suggestedFreq = 'quarterly';
+                              else suggestedFreq = 'yearly';
+
+                              setFormData({
+                                name: merchantGroup.merchant,
+                                merchantName: merchantGroup.merchant,
+                                category: currentCategory,
+                                amount: merchantGroup.avgAmount.toFixed(2),
+                                isVariableAmount: false,
+                                amountMin: '',
+                                amountMax: '',
+                                frequency: suggestedFreq,
+                                frequencyDays: '',
+                                dayOfMonth: '',
+                                dayOfWeek: '',
+                                startDate: merchantGroup.firstDate.split('T')[0],
+                                endDate: '',
+                                lastPaymentDate: merchantGroup.lastDate.split('T')[0],
+                                notes: `Auto-detected from ${merchantGroup.count} transactions`,
+                              });
+                              setShowAddForm(true);
+                            }}
+                            style={{
+                              padding: '8px 16px',
+                              background: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            + Add as Recurring
+                          </button>
+                          {recurringPayments.length > 0 && (
+                            <button
+                              onClick={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setLinkModalPosition({
+                                  x: rect.left + rect.width / 2,
+                                  y: rect.top + rect.height / 2, // Center of the button
+                                });
+                                setLinkToExistingModal({
+                                  merchant: merchantGroup.merchant,
+                                  category: currentCategory,
+                                  suggestedAmount: merchantGroup.avgAmount,
+                                  suggestedFrequency: (() => {
+                                    const daysBetween = (new Date(merchantGroup.lastDate) - new Date(merchantGroup.firstDate)) / (1000 * 60 * 60 * 24);
+                                    const avgDays = daysBetween / (merchantGroup.count - 1);
+                                    if (avgDays <= 10) return 'weekly';
+                                    else if (avgDays <= 20) return 'bi-weekly';
+                                    else if (avgDays <= 45) return 'monthly';
+                                    else if (avgDays <= 100) return 'quarterly';
+                                    else return 'yearly';
+                                  })(),
+                                  occurrences: merchantGroup.count,
+                                  lastDate: merchantGroup.lastDate,
+                                });
+                              }}
+                              style={{
+                                padding: '8px 16px',
+                                background: '#667eea',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '500',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              🔗 Link to Existing
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setExpandedMerchant(expandedMerchant === merchantGroup.merchant ? null : merchantGroup.merchant)}
+                            style={{
+                              padding: '6px 12px',
+                              background: '#f3f4f6',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              color: '#374151',
+                            }}
+                          >
+                            {expandedMerchant === merchantGroup.merchant ? 'Hide' : 'Show'} Transactions
+                          </button>
+                          <button
+                            onClick={() => handleDismissSuggestion({
+                              merchant: merchantGroup.merchant,
+                              category: currentCategory,
+                            })}
+                            style={{
+                              padding: '8px 16px',
+                              background: '#f3f4f6',
+                              color: '#6b7280',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            ✕ Dismiss
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expanded Transaction List */}
+                      {expandedMerchant === merchantGroup.merchant && (
+                        <div style={{
+                          marginTop: '15px',
+                          padding: '15px',
+                          background: '#f9fafb',
+                          borderRadius: '8px',
+                          border: '1px solid #e5e7eb',
+                        }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '10px', color: '#6b7280' }}>
+                            Transactions ({merchantGroup.transactions.length})
+                          </div>
+                          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                            {merchantGroup.transactions
+                              .sort((a, b) => new Date(b.date) - new Date(a.date))
+                              .map((tx, txIdx) => (
+                                <div
+                                  key={tx.transaction_id || txIdx}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '10px',
+                                    borderBottom: txIdx < merchantGroup.transactions.length - 1 ? '1px solid #e5e7eb' : 'none',
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontSize: '14px', fontWeight: '500' }}>
+                                      {tx.name}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                      {formatDate(tx.date)}
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                                    {formatCurrency(Math.abs(tx.amount))}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Daily/Weekend Estimates Tab */}
+      {activeTab === 'estimates' && (
+        <div>
+          <div style={{
+            padding: '15px',
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            fontSize: '14px',
+            color: '#1e40af',
+          }}>
+            <strong>💡 Daily & Weekend Estimates:</strong> These are estimated expenses calculated from your historical spending patterns. 
+            Daily estimates are spread across every day of the month, while weekend estimates are applied on Saturdays and Sundays.
+            These supplement your recurring payments in the spending forecast.
+          </div>
+
+          {loadingEstimates ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+              Loading estimates...
+            </div>
+          ) : !dailyWeekendEstimates ? (
+            <div style={{
+              padding: '40px',
+              textAlign: 'center',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+            }}>
+              <p style={{ color: '#6b7280' }}>
+                No daily/weekend estimates available yet.
+              </p>
+              <p style={{ color: '#6b7280', fontSize: '14px', marginTop: '10px' }}>
+                Estimates are calculated from your categorized transaction history. Make sure you have transactions categorized.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '20px' }}>
+              {/* Daily Estimates Section */}
+              <div style={{
+                padding: '20px',
+                background: 'white',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', margin: 0 }}>
+                    📅 Daily Estimates
+                  </h3>
+                  <div style={{
+                    padding: '8px 16px',
+                    background: '#f0fdf4',
+                    borderRadius: '8px',
+                    border: '1px solid #bbf7d0',
+                  }}>
+                    <div style={{ fontSize: '12px', color: '#166534', marginBottom: '4px' }}>Monthly Total</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>
+                      {formatCurrency(dailyWeekendEstimates.daily.total)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                      ~{formatCurrency(dailyWeekendEstimates.daily.perDay)} per day
+                    </div>
+                  </div>
+                </div>
+                
+                {Object.keys(dailyWeekendEstimates.daily.byCategory).length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>
+                    No daily estimates configured
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    {Object.entries(dailyWeekendEstimates.daily.byCategory)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([category, monthlyTotal]) => (
+                        <div
+                          key={category}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 15px',
+                            background: '#f9fafb',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px' }}>
+                              {category}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                              Applied every day
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>
+                              {formatCurrency(monthlyTotal)}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                              {formatCurrency(monthlyTotal / 30)} / day
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Weekend Estimates Section */}
+              <div style={{
+                padding: '20px',
+                background: 'white',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', margin: 0 }}>
+                    🎉 Weekend Estimates
+                  </h3>
+                  <div style={{
+                    padding: '8px 16px',
+                    background: '#fef3c7',
+                    borderRadius: '8px',
+                    border: '1px solid #fde68a',
+                  }}>
+                    <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Monthly Total</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>
+                      {formatCurrency(dailyWeekendEstimates.weekend.total)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                      ~{formatCurrency(dailyWeekendEstimates.weekend.perWeekend)} per weekend
+                    </div>
+                  </div>
+                </div>
+                
+                {Object.keys(dailyWeekendEstimates.weekend.byCategory).length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>
+                    No weekend estimates configured
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    {Object.entries(dailyWeekendEstimates.weekend.byCategory)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([category, monthlyTotal]) => (
+                        <div
+                          key={category}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 15px',
+                            background: '#f9fafb',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px' }}>
+                              {category}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                              Applied on Saturdays & Sundays
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>
+                              {formatCurrency(monthlyTotal)}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                              {formatCurrency(monthlyTotal / 8.5)} / weekend
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Summary */}
+              <div style={{
+                padding: '20px',
+                background: 'linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%)',
+                borderRadius: '12px',
+                border: '2px solid #667eea',
+              }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '15px', color: '#4338ca' }}>
+                  📊 Total Impact
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '5px' }}>Recurring Expenses</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827' }}>
+                      {formatCurrency(summary?.totalMonthlyExpenses || 0)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '5px' }}>Daily Estimates</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>
+                      +{formatCurrency(dailyWeekendEstimates.daily.total)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '5px' }}>Weekend Estimates</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>
+                      +{formatCurrency(dailyWeekendEstimates.weekend.total)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '5px' }}>Total Monthly Expenses</div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>
+                      {formatCurrency(
+                        (summary?.totalMonthlyExpenses || 0) + 
+                        dailyWeekendEstimates.daily.total + 
+                        dailyWeekendEstimates.weekend.total
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+

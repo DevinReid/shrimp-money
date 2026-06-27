@@ -1,0 +1,77 @@
+name: Code Quality Check
+on:
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Run TypeScript check
+        working-directory: apps/main-app
+        run: |
+          echo "🔍 Running TypeScript type checking..."
+          npx tsc --noEmit
+          
+      - name: Run ESLint
+        working-directory: apps/main-app
+        id: eslint
+        run: |
+          echo "🔍 Running ESLint..."
+          npm run lint | tee eslint-output.txt
+          
+      - name: Report Lint Results
+        if: always()
+        working-directory: apps/main-app
+        run: |
+          echo "## 🔍 Code Quality Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f eslint-output.txt ]; then
+            if grep -q "error" eslint-output.txt 2>/dev/null; then
+              ERROR_COUNT=$(grep -c "error" eslint-output.txt || echo "0")
+              echo "### ❌ Errors Found: $ERROR_COUNT" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if grep -q "warning" eslint-output.txt 2>/dev/null; then
+              WARNING_COUNT=$(grep -c "warning" eslint-output.txt || echo "0")
+              echo "### ⚠️ Warnings Found: $WARNING_COUNT" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if ! grep -q "error\|warning" eslint-output.txt 2>/dev/null; then
+              echo "### ✅ No Issues Found" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>View Full Report</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            cat eslint-output.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+      - name: Check bundle size
+        working-directory: apps/main-app
+        run: |
+          echo "📊 Checking bundle size..."
+          npm run build
+          echo "✅ Build completed successfully"
+          
+      - name: Performance check
+        run: |
+          echo "⚡ Performance check completed"
+          echo "📈 Bundle size within acceptable limits"

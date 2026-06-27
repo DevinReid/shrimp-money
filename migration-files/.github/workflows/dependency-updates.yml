@@ -1,0 +1,25 @@
+name: Dependency Updates
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 9 AM
+  workflow_dispatch:
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for outdated packages
+        run: |
+          echo "🔍 Checking for outdated packages..."
+          npm outdated || true
+          
+      - name: Security audit
+        run: |
+          echo "🛡️ Running security audit..."
+          npm audit --audit-level=moderate
+          
+      - name: Update summary
+        run: |
+          echo "📊 Dependency check completed"
+          echo "📝 Review outdated packages above"
+          echo "🔄 Consider updating critical dependencies"

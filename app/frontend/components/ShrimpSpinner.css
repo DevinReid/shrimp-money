@@ -1,0 +1,57 @@
+/* 🦐 Spinning Shrimp Spinner with Rainbow Colors 🦐 */
+
+.shrimp-spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite, rainbow 2s linear infinite;
+}
+
+.shrimp-emoji {
+  display: inline-block;
+  font-size: inherit;
+  line-height: 1;
+  filter: hue-rotate(0deg);
+  animation: rainbow-hue 2s linear infinite;
+}
+
+.shrimp-spinner-small {
+  font-size: 1.5rem;
+}
+
+.shrimp-spinner-medium {
+  font-size: 3rem;
+}
+
+.shrimp-spinner-large {
+  font-size: 4rem;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rainbow {
+  0% { filter: hue-rotate(0deg) saturate(1.2) brightness(1.1); }
+  16.66% { filter: hue-rotate(60deg) saturate(1.2) brightness(1.1); }
+  33.33% { filter: hue-rotate(120deg) saturate(1.2) brightness(1.1); }
+  50% { filter: hue-rotate(180deg) saturate(1.2) brightness(1.1); }
+  66.66% { filter: hue-rotate(240deg) saturate(1.2) brightness(1.1); }
+  83.33% { filter: hue-rotate(300deg) saturate(1.2) brightness(1.1); }
+  100% { filter: hue-rotate(360deg) saturate(1.2) brightness(1.1); }
+}
+
+@keyframes rainbow-hue {
+  0% { filter: hue-rotate(0deg) saturate(1.3) brightness(1.2); }
+  16.66% { filter: hue-rotate(60deg) saturate(1.3) brightness(1.2); }
+  33.33% { filter: hue-rotate(120deg) saturate(1.3) brightness(1.2); }
+  50% { filter: hue-rotate(180deg) saturate(1.3) brightness(1.2); }
+  66.66% { filter: hue-rotate(240deg) saturate(1.3) brightness(1.2); }
+  83.33% { filter: hue-rotate(300deg) saturate(1.3) brightness(1.2); }
+  100% { filter: hue-rotate(360deg) saturate(1.3) brightness(1.2); }
+}
+
+

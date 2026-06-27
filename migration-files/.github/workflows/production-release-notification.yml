@@ -1,0 +1,294 @@
+name: Production Release Notification
+
+# Sends a webhook to n8n when code is merged to main for company-wide email notifications
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Get Latest Tag
+        id: get_tag
+        run: |
+          # Get the latest tag, or default to v0.0.0 if none exists
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+          
+      - name: Get Release Information
+        id: release_info
+        run: |
+          LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_SHA_FULL=$(git rev-parse HEAD)
+          COMMIT_AUTHOR=$(git log -1 --pretty=format:'%an')
+          COMMIT_AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae')
+          COMMIT_MESSAGE=$(git log -1 --pretty=format:'%B')
+          COMMIT_DATE=$(git log -1 --pretty=format:'%ad' --date=iso8601)
+          
+          # Get commits since last tag
+          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+            # First release - get last 50 commits to avoid too much data
+            COMMITS=$(git log -50 --pretty=format:"- %s (%h)" --reverse || echo "")
+            COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+          else
+            # Get commits since last tag
+            COMMITS=$(git log $LATEST_TAG..HEAD --pretty=format:"- %s (%h)" --reverse || echo "")
+            COMMIT_COUNT=$(git rev-list --count $LATEST_TAG..HEAD 2>/dev/null || echo "0")
+          fi
+          
+          # Ensure COMMIT_COUNT is numeric
+          COMMIT_COUNT=${COMMIT_COUNT:-0}
+          
+          # Count commit types (ensure we always get a number, default to 0)
+          FEAT_COUNT=$(echo "$COMMITS" | grep -c "^- feat" 2>/dev/null || echo "0")
+          FIX_COUNT=$(echo "$COMMITS" | grep -c "^- fix" 2>/dev/null || echo "0")
+          SECURITY_COUNT=$(echo "$COMMITS" | grep -c "^- security" 2>/dev/null || echo "0")
+          PERF_COUNT=$(echo "$COMMITS" | grep -c "^- perf" 2>/dev/null || echo "0")
+          DOCS_COUNT=$(echo "$COMMITS" | grep -c "^- docs" 2>/dev/null || echo "0")
+          REFACTOR_COUNT=$(echo "$COMMITS" | grep -c "^- refactor" 2>/dev/null || echo "0")
+          CHORE_COUNT=$(echo "$COMMITS" | grep -c "^- chore" 2>/dev/null || echo "0")
+          
+          # Ensure all counts are numeric (handle empty strings)
+          FEAT_COUNT=${FEAT_COUNT:-0}
+          FIX_COUNT=${FIX_COUNT:-0}
+          SECURITY_COUNT=${SECURITY_COUNT:-0}
+          PERF_COUNT=${PERF_COUNT:-0}
+          DOCS_COUNT=${DOCS_COUNT:-0}
+          REFACTOR_COUNT=${REFACTOR_COUNT:-0}
+          CHORE_COUNT=${CHORE_COUNT:-0}
+          
+          # Categorize commits
+          FEATURES=$(echo "$COMMITS" | grep "^- feat" || true)
+          FIXES=$(echo "$COMMITS" | grep "^- fix" || true)
+          CHORES=$(echo "$COMMITS" | grep "^- chore" || true)
+          DOCS=$(echo "$COMMITS" | grep "^- docs" || true)
+          SECURITY=$(echo "$COMMITS" | grep "^- security" || true)
+          PERF=$(echo "$COMMITS" | grep "^- perf" || true)
+          REFACTOR=$(echo "$COMMITS" | grep "^- refactor" || true)
+          OTHER=$(echo "$COMMITS" | grep -Ev "^- (feat|fix|chore|docs|security|perf|refactor)" || true)
+          
+          # Get files changed
+          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+            FILES_CHANGED=$(git diff --name-only HEAD~50..HEAD 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          else
+            FILES_CHANGED=$(git diff --name-only $LATEST_TAG..HEAD 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          fi
+          
+          # Ensure FILES_CHANGED is numeric
+          FILES_CHANGED=${FILES_CHANGED:-0}
+          
+          # Calculate version (similar to release-on-merge.yml logic)
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+          
+          BREAKING_COUNT=$(echo "$COMMITS" | grep -c "BREAKING CHANGE" 2>/dev/null || echo "0")
+          BREAKING_COUNT=${BREAKING_COUNT:-0}
+          
+          if [ "$BREAKING_COUNT" -gt 0 ] 2>/dev/null; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            BUMP_TYPE="major"
+          elif [ "$FEAT_COUNT" -gt 0 ] 2>/dev/null; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            BUMP_TYPE="minor"
+          elif [ "$FIX_COUNT" -gt 0 ] 2>/dev/null; then
+            PATCH=$((PATCH + 1))
+            BUMP_TYPE="patch"
+          else
+            PATCH=$((PATCH + 1))
+            BUMP_TYPE="patch"
+          fi
+          
+          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+          
+          # Build release summary
+          RELEASE_SUMMARY="Release $NEW_VERSION"
+          if [ "$FEAT_COUNT" -gt 0 ]; then
+            RELEASE_SUMMARY="$RELEASE_SUMMARY with $FEAT_COUNT new feature$( [ "$FEAT_COUNT" -ne 1 ] && echo "s" || echo "" )"
+          fi
+          if [ "$FIX_COUNT" -gt 0 ]; then
+            RELEASE_SUMMARY="$RELEASE_SUMMARY, $FIX_COUNT fix$( [ "$FIX_COUNT" -ne 1 ] && echo "es" || echo "" )"
+          fi
+          
+          # Save to outputs
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "commit_sha_full=$COMMIT_SHA_FULL" >> $GITHUB_OUTPUT
+          echo "commit_author=$COMMIT_AUTHOR" >> $GITHUB_OUTPUT
+          echo "commit_author_email=$COMMIT_AUTHOR_EMAIL" >> $GITHUB_OUTPUT
+          echo "commit_message<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "commit_date=$COMMIT_DATE" >> $GITHUB_OUTPUT
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          echo "files_changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "release_summary=$RELEASE_SUMMARY" >> $GITHUB_OUTPUT
+          echo "feat_count=$FEAT_COUNT" >> $GITHUB_OUTPUT
+          echo "fix_count=$FIX_COUNT" >> $GITHUB_OUTPUT
+          echo "security_count=$SECURITY_COUNT" >> $GITHUB_OUTPUT
+          echo "perf_count=$PERF_COUNT" >> $GITHUB_OUTPUT
+          echo "docs_count=$DOCS_COUNT" >> $GITHUB_OUTPUT
+          echo "refactor_count=$REFACTOR_COUNT" >> $GITHUB_OUTPUT
+          echo "chore_count=$CHORE_COUNT" >> $GITHUB_OUTPUT
+          
+          # Save categorized commits to temp files for webhook payload
+          echo "$FEATURES" > /tmp/features.txt
+          echo "$FIXES" > /tmp/fixes.txt
+          echo "$CHORES" > /tmp/chores.txt
+          echo "$DOCS" > /tmp/docs.txt
+          echo "$SECURITY" > /tmp/security.txt
+          echo "$PERF" > /tmp/perf.txt
+          echo "$REFACTOR" > /tmp/refactor.txt
+          echo "$OTHER" > /tmp/other.txt
+          
+      - name: Notify via n8n Webhook
+        env:
+          N8N_WEBHOOK_URL: ${{ secrets.N8N_PRODUCTION_RELEASE_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          # Skip if webhook URL not configured
+          if [ -z "$N8N_WEBHOOK_URL" ]; then
+            echo "ℹ️ N8N webhook URL not configured. Skipping notification."
+            echo "   Set N8N_PRODUCTION_RELEASE_WEBHOOK_URL secret to enable notifications."
+            exit 0
+          fi
+          
+          # Build URLs
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ steps.release_info.outputs.commit_sha_full }}"
+          RELEASE_URL="${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.release_info.outputs.new_version }}"
+          COMPARE_URL="${{ github.server_url }}/${{ github.repository }}/compare/${{ steps.get_tag.outputs.latest_tag }}...${{ steps.release_info.outputs.new_version }}"
+          
+          # Read categorized commits
+          FEATURES=$(cat /tmp/features.txt 2>/dev/null || echo "")
+          FIXES=$(cat /tmp/fixes.txt 2>/dev/null || echo "")
+          CHORES=$(cat /tmp/chores.txt 2>/dev/null || echo "")
+          DOCS=$(cat /tmp/docs.txt 2>/dev/null || echo "")
+          SECURITY=$(cat /tmp/security.txt 2>/dev/null || echo "")
+          PERF=$(cat /tmp/perf.txt 2>/dev/null || echo "")
+          REFACTOR=$(cat /tmp/refactor.txt 2>/dev/null || echo "")
+          OTHER=$(cat /tmp/other.txt 2>/dev/null || echo "")
+          
+          # Build webhook payload using jq
+          PAYLOAD=$(jq -n \
+            --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg event "production_release" \
+            --arg repository "${{ github.repository }}" \
+            --arg branch "main" \
+            --arg sha "${{ steps.release_info.outputs.commit_sha }}" \
+            --arg shaFull "${{ steps.release_info.outputs.commit_sha_full }}" \
+            --arg message "${{ steps.release_info.outputs.commit_message }}" \
+            --arg authorName "${{ steps.release_info.outputs.commit_author }}" \
+            --arg authorEmail "${{ steps.release_info.outputs.commit_author_email }}" \
+            --arg date "${{ steps.release_info.outputs.commit_date }}" \
+            --arg commitUrl "$COMMIT_URL" \
+            --arg repoUrl "$REPO_URL" \
+            --arg releaseUrl "$RELEASE_URL" \
+            --arg compareUrl "$COMPARE_URL" \
+            --arg version "${{ steps.release_info.outputs.new_version }}" \
+            --arg bumpType "${{ steps.release_info.outputs.bump_type }}" \
+            --arg releaseSummary "${{ steps.release_info.outputs.release_summary }}" \
+            --argjson totalCommits "${{ steps.release_info.outputs.commit_count }}" \
+            --argjson filesChanged "${{ steps.release_info.outputs.files_changed }}" \
+            --argjson featCount "${{ steps.release_info.outputs.feat_count }}" \
+            --argjson fixCount "${{ steps.release_info.outputs.fix_count }}" \
+            --argjson securityCount "${{ steps.release_info.outputs.security_count }}" \
+            --argjson perfCount "${{ steps.release_info.outputs.perf_count }}" \
+            --argjson docsCount "${{ steps.release_info.outputs.docs_count }}" \
+            --argjson refactorCount "${{ steps.release_info.outputs.refactor_count }}" \
+            --argjson choreCount "${{ steps.release_info.outputs.chore_count }}" \
+            --arg features "$FEATURES" \
+            --arg fixes "$FIXES" \
+            --arg chores "$CHORES" \
+            --arg docs "$DOCS" \
+            --arg security "$SECURITY" \
+            --arg perf "$PERF" \
+            --arg refactor "$REFACTOR" \
+            --arg other "$OTHER" \
+            --arg environment "production" \
+            '{
+              timestamp: $timestamp,
+              event: $event,
+              repository: $repository,
+              branch: $branch,
+              version: $version,
+              bumpType: $bumpType,
+              releaseSummary: $releaseSummary,
+              commit: {
+                sha: $sha,
+                shaFull: $shaFull,
+                message: $message,
+                author: {
+                  name: $authorName,
+                  email: $authorEmail
+                },
+                date: $date,
+                url: $commitUrl
+              },
+              stats: {
+                totalCommits: $totalCommits,
+                filesChanged: $filesChanged,
+                features: $featCount,
+                fixes: $fixCount,
+                security: $securityCount,
+                performance: $perfCount,
+                documentation: $docsCount,
+                refactoring: $refactorCount,
+                maintenance: $choreCount
+              },
+              changes: {
+                features: ($features | split("\n") | map(select(. != ""))),
+                fixes: ($fixes | split("\n") | map(select(. != ""))),
+                security: ($security | split("\n") | map(select(. != ""))),
+                performance: ($perf | split("\n") | map(select(. != ""))),
+                documentation: ($docs | split("\n") | map(select(. != ""))),
+                refactoring: ($refactor | split("\n") | map(select(. != ""))),
+                maintenance: ($chores | split("\n") | map(select(. != ""))),
+                other: ($other | split("\n") | map(select(. != "")))
+              },
+              links: {
+                commit: $commitUrl,
+                repository: $repoUrl,
+                release: $releaseUrl,
+                compare: $compareUrl
+              },
+              environment: $environment
+            }')
+          
+          # Send webhook to n8n
+          echo "📡 Sending production release notification to n8n webhook..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$N8N_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Notification sent successfully! (HTTP $HTTP_CODE)"
+            echo "Response: $BODY"
+          else
+            echo "⚠️ Webhook returned HTTP $HTTP_CODE"
+            echo "Response: $BODY"
+            # Don't fail the workflow if webhook fails
+            exit 0
+          fi
+

@@ -1,0 +1,17 @@
+{
+  "name": "plaid-connect",
+  "version": "1.0.0",
+  "description": "Plaid integration for Capital One account data",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "install:all": "npm install && cd frontend && npm install",
+    "dev": "cd frontend && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+

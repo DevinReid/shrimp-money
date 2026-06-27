@@ -1,0 +1,31 @@
+name: Security Scan
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+  schedule:
+    - cron: '0 2 * * 1'  # Every Monday at 2 AM
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Run security audit
+        run: |
+          echo "🔍 Running security audit..."
+          npm audit --audit-level=critical
+          
+      - name: Check for vulnerabilities
+        run: |
+          echo "🛡️ Checking for critical vulnerabilities..."
+          npm audit --audit-level=critical
+          
+      - name: Security scan results
+        run: |
+          echo "✅ Security scan completed"
+          echo "⚠️ Note: xlsx package has known high severity issues"
+          echo "📝 Consider switching to exceljs or node-xlsx for better security"
